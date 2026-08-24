@@ -1,4 +1,4 @@
-"""Pipeline Step 3: Persist normalized records, skipping duplicates."""
+"""Pipeline Step 3: persist first-seen records and time-series snapshots."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,23 +11,24 @@ async def store_records(
     task_id: str,
     source_id: str,
     normalized_triples: list[tuple[dict, dict, str]],
-) -> tuple[list[CollectedRecord], int]:
-    """Insert new records; skip existing ones by content_hash.
+) -> tuple[list[CollectedRecord], int, int]:
+    """Insert first-seen records and always persist a per-task metrics snapshot.
 
-    Returns (new_records, skipped_count).
+    ``CollectedRecord`` remains deduplicated for compatibility. Repeated works
+    are preserved in ``EngagementSnapshot`` by the content snapshotter.
     """
     if not normalized_triples:
-        return [], 0
+        return [], 0, 0
 
     # Collect all hashes to check for duplicates in one query
     hashes = [h for _, _, h in normalized_triples]
     result = await session.execute(
-        select(CollectedRecord.content_hash).where(
+        select(CollectedRecord).where(
             CollectedRecord.source_id == source_id,
             CollectedRecord.content_hash.in_(hashes),
         )
     )
-    existing_hashes = {row[0] for row in result}
+    existing_hashes = {record.content_hash for record in result.scalars()}
 
     new_records: list[CollectedRecord] = []
     skipped = 0
@@ -47,6 +48,16 @@ async def store_records(
         )
         session.add(record)
         new_records.append(record)
+        existing_hashes.add(content_hash)
+
+    from backend.pipeline.content_snapshotter import store_content_snapshots
+
+    snapshots_stored = await store_content_snapshots(
+        session=session,
+        task_id=task_id,
+        source_id=source_id,
+        normalized_triples=normalized_triples,
+    )
 
     await session.flush()
-    return new_records, skipped
+    return new_records, skipped, snapshots_stored

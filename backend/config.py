@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     api_key_enabled: bool = False
     api_key: str = ""
 
+    # MVP feature gates. Collection and snapshotting remain enabled; model
+    # processing and outbound notifications require an explicit later opt-in.
+    builtin_ai_enabled: bool = False
+    notifications_enabled: bool = False
+
     # Email
     smtp_host: str = ""
     smtp_port: int = 587

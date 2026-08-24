@@ -36,9 +36,10 @@ async def test_store_new_records(db_session):
         ),
     ]
 
-    new_records, skipped = await store_records(db_session, task.id, source.id, triples)
+    new_records, skipped, snapshots = await store_records(db_session, task.id, source.id, triples)
     assert len(new_records) == 2
     assert skipped == 0
+    assert snapshots == 2
 
 
 @pytest.mark.asyncio
@@ -65,18 +66,25 @@ async def test_store_deduplication(db_session):
     )
 
     # First store: new record
-    records1, skipped1 = await store_records(db_session, task.id, source.id, [triple])
+    records1, skipped1, snapshots1 = await store_records(
+        db_session, task.id, source.id, [triple]
+    )
     assert len(records1) == 1
     assert skipped1 == 0
+    assert snapshots1 == 1
 
     # Second store: duplicate should be skipped
-    records2, skipped2 = await store_records(db_session, task.id, source.id, [triple])
+    records2, skipped2, snapshots2 = await store_records(
+        db_session, task.id, source.id, [triple]
+    )
     assert len(records2) == 0
     assert skipped2 == 1
+    assert snapshots2 == 0
 
 
 @pytest.mark.asyncio
 async def test_store_empty_input(db_session):
-    new_records, skipped = await store_records(db_session, "task-id", "src-id", [])
+    new_records, skipped, snapshots = await store_records(db_session, "task-id", "src-id", [])
     assert new_records == []
     assert skipped == 0
+    assert snapshots == 0

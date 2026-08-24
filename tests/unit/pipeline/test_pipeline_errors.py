@@ -92,7 +92,10 @@ async def test_pipeline_with_ai_failure_still_returns_success(db_session):
 
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
-        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=(mock_records, 0))),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=(mock_records, 0, len(mock_records))),
+        ),
         patch("backend.database.AsyncSessionLocal", return_value=mock_session_cm),
         patch(
             "backend.pipeline.ai_processor.process_with_ai",

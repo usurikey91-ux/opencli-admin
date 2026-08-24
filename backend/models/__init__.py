@@ -1,6 +1,12 @@
 from backend.models.agent import AIAgent
 from backend.models.base import TimestampMixin
 from backend.models.browser import BrowserBinding, BrowserInstance
+from backend.models.content_monitor import (
+    ContentAccount,
+    ContentWork,
+    DetectionResult,
+    EngagementSnapshot,
+)
 from backend.models.edge_node import EdgeNode, EdgeNodeEvent
 from backend.models.notification import NotificationLog, NotificationRule
 from backend.models.provider import ModelProvider
@@ -15,6 +21,10 @@ __all__ = [
     "AIAgent",
     "BrowserBinding",
     "BrowserInstance",
+    "ContentAccount",
+    "ContentWork",
+    "EngagementSnapshot",
+    "DetectionResult",
     "EdgeNode",
     "EdgeNodeEvent",
     "ModelProvider",

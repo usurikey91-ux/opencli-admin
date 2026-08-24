@@ -17,6 +17,7 @@ class PipelineResult:
     source_id: str
     collected: int = 0
     stored: int = 0
+    snapshots_stored: int = 0
     skipped: int = 0
     ai_processed: int = 0
     notifications_sent: int = 0
@@ -29,8 +30,8 @@ async def run_pipeline(
     task_id: str,
     source: DataSource,
     parameters: dict[str, Any] | None = None,
-    enable_ai: bool = True,
-    enable_notifications: bool = True,
+    enable_ai: bool = False,
+    enable_notifications: bool = False,
     agent_config: dict[str, Any] | None = None,
     run_id: str | None = None,
 ) -> PipelineResult:
@@ -140,7 +141,9 @@ async def run_pipeline(
     logger.info("[task:%s] step3/store start | items=%d", task_id, len(triples))
     try:
         async with AsyncSessionLocal() as session:
-            new_records, skipped = await storer.store_records(session, task_id, source.id, triples)
+            new_records, skipped, snapshots_stored = await storer.store_records(
+                session, task_id, source.id, triples
+            )
             await session.commit()
     except Exception as exc:
         logger.exception("[task:%s] step3/store exception | %s", task_id, exc)
@@ -150,13 +153,23 @@ async def run_pipeline(
             collected=channel_result.count,
             error=str(exc),
         )
-    logger.info("[task:%s] step3/store done | new=%d skipped=%d",
-                task_id, len(new_records), skipped)
+    logger.info(
+        "[task:%s] step3/store done | new=%d snapshots=%d skipped=%d",
+        task_id,
+        len(new_records),
+        snapshots_stored,
+        skipped,
+    )
     if run_id:
         await events.emit(
             run_id, "store",
-            f"入库完成 | 新增 {len(new_records)} 条，跳过 {skipped} 条（重复）",
-            detail={"new": len(new_records), "skipped": skipped},
+            f"入库完成 | 新增 {len(new_records)} 条，快照 {snapshots_stored} 条，"
+            f"重复作品 {skipped} 条",
+            detail={
+                "new": len(new_records),
+                "skipped": skipped,
+                "snapshots_stored": snapshots_stored,
+            },
         )
 
     # Step 4: AI processing
@@ -231,11 +244,13 @@ async def run_pipeline(
     if run_id:
         await events.emit(
             run_id, "complete",
-            f"任务完成 | 总耗时 {duration_ms}ms | 采集 {channel_result.count} 新增 {len(new_records)} 跳过 {skipped}",
+            f"任务完成 | 总耗时 {duration_ms}ms | 采集 {channel_result.count} "
+            f"新增 {len(new_records)} 快照 {snapshots_stored} 跳过 {skipped}",
             detail={
                 "duration_ms": duration_ms,
                 "collected": channel_result.count,
                 "stored": len(new_records),
+                "snapshots_stored": snapshots_stored,
                 "skipped": skipped,
             },
         )
@@ -245,6 +260,7 @@ async def run_pipeline(
         source_id=source.id,
         collected=channel_result.count,
         stored=len(new_records),
+        snapshots_stored=snapshots_stored,
         skipped=skipped,
         ai_processed=ai_count,
         duration_ms=duration_ms,

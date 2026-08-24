@@ -189,7 +189,7 @@ async def add_chrome_instance(
                     name=name,
                     network=network,
                     labels={"agent.pool.extra": "true", "agent.pool.index": str(N)},
-                    ports={"6080/tcp": novnc_port},
+                    ports={"6080/tcp": ("127.0.0.1", novnc_port)},
                     volumes={volume: {"bind": "/home/chrome/.config/chromium", "mode": "rw"}},
                     restart_policy={"Name": "unless-stopped"},
                 )

@@ -112,12 +112,16 @@ async def run_collection_pipeline(
                 {k: v for k, v in (agent_config or {}).items() if k != "prompt_template"})
 
     # ── Phase 3: run pipeline (no session held during collection) ─────────────
+    from backend.config import get_settings
+    settings = get_settings()
     pipeline_result = await run_pipeline(
         task_id=task_id,
         source=source,
         parameters=merged_params,
         agent_config=agent_config,
         run_id=run_id,
+        enable_ai=settings.builtin_ai_enabled,
+        enable_notifications=settings.notifications_enabled,
     )
 
     # ── Phase 4: persist final status ────────────────────────────────────────
@@ -128,7 +132,7 @@ async def run_collection_pipeline(
         if run:
             run.finished_at = datetime.now(timezone.utc)
             run.duration_ms = pipeline_result.duration_ms
-            run.records_collected = pipeline_result.stored
+            run.records_collected = pipeline_result.snapshots_stored
             if pipeline_result.metadata.get("node_url"):
                 run.node_url = pipeline_result.metadata["node_url"]
 
@@ -161,6 +165,7 @@ async def run_collection_pipeline(
         "run_id": run_id,
         "success": pipeline_result.success,
         "collected": pipeline_result.collected,
+        "snapshots_stored": pipeline_result.snapshots_stored,
         "stored": pipeline_result.stored,
         "skipped": pipeline_result.skipped,
         "error": pipeline_result.error,

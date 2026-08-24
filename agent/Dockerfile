@@ -8,7 +8,7 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
 # Base system deps (always installed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates procps \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,7 +25,7 @@ RUN if [ "$INSTALL_CHROME" = "true" ]; then \
 fi
 
 # Install opencli globally — available as 'opencli' on PATH
-ARG OPENCLI_VERSION=1.1.1
+ARG OPENCLI_VERSION=1.7.4
 RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
     && rm -rf /root/.npm
 

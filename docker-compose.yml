@@ -27,7 +27,7 @@ services:
     image: ${DOCKER_REGISTRY:-}postgres:16-alpine
     profiles: ["postgres"]
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-opencli_admin}
       POSTGRES_USER: ${POSTGRES_USER:-opencli}
@@ -44,9 +44,6 @@ services:
   # ── Backend API ───────────────────────────────────────────────────────────
   api:
     <<: *backend-common
-    # Run as root so the API can manage Docker containers (agent pool) via
-    # the mounted socket. Acceptable for a self-hosted admin panel.
-    user: root
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////data/opencli_admin.db}
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -71,12 +68,8 @@ services:
     volumes:
       - db_data:/data
       - ./backend:/app/backend
-      # Docker socket: lets the API start/stop agent pool containers
-      - /var/run/docker.sock:/var/run/docker.sock
-      # .env mount: lets the API persist AGENT_POOL_ENDPOINTS after pool changes
-      - ./.env:/app/.env:rw
     ports:
-      - "${API_PORT:-8031}:8000"
+      - "127.0.0.1:${API_PORT:-8031}:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -159,7 +152,7 @@ services:
     volumes:
       - agent_profile_1:/home/agent/.config/chromium
     ports:
-      - "${AGENT1_PORT:-19823}:19823"   # agent_server HTTP API
+      - "127.0.0.1:${AGENT1_PORT:-19823}:19823"   # agent_server HTTP API
     depends_on:
       api:
         condition: service_healthy
@@ -196,14 +189,14 @@ services:
     volumes:
       - agent_profile:/home/agent/.config/chromium
     ports:
-      - "${AGENT_PORT:-19823}:19823"
+      - "127.0.0.1:${AGENT_PORT:-19823}:19823"
     restart: unless-stopped
 
   # ── Frontend (nginx + built React) — production ───────────────────────────
   frontend:
     image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-frontend:${IMAGE_TAG:-0.3.6}
     ports:
-      - "${FRONTEND_PORT:-8030}:80"
+      - "127.0.0.1:${FRONTEND_PORT:-8030}:80"
     depends_on:
       api:
         condition: service_healthy
@@ -219,7 +212,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "${FRONTEND_PORT:-8030}:5173"
+      - "127.0.0.1:${FRONTEND_PORT:-8030}:5173"
     environment:
       VITE_API_PROXY_TARGET: "http://api:8000"
     depends_on:
