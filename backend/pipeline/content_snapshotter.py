@@ -180,6 +180,7 @@ async def store_content_snapshots(
     account_cache: dict[str, ContentAccount] = {}
     work_cache: dict[tuple[str, str], ContentWork] = {}
     task_work_ids: set[str] = set()
+    new_snapshots: list[EngagementSnapshot] = []
     stored = 0
     observed_now = _utcnow()
 
@@ -303,7 +304,18 @@ async def store_content_snapshots(
             **metrics,
         )
         session.add(snapshot)
+        new_snapshots.append(snapshot)
         stored += 1
 
     await session.flush()
+    from backend.services.content_detection import configured_metric, evaluate_final_snapshot
+
+    metric_name = configured_metric(source.channel_config)
+    if metric_name:
+        for snapshot in new_snapshots:
+            await evaluate_final_snapshot(
+                session,
+                snapshot_id=snapshot.id,
+                metric_name=metric_name,
+            )
     return stored
