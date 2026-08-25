@@ -6,6 +6,7 @@ import type {
   BrowserBinding,
   ChromeEndpoint,
   CollectedRecord,
+  MonitoredWork,
   CollectionTask,
   CronSchedule,
   DataSource,
@@ -136,6 +137,16 @@ export const listNotificationLogs = (params?: { rule_id?: string }) =>
   apiClient
     .get<ApiResponse<NotificationLog[]>>('/notifications/logs', { params })
     .then((r) => r.data)
+
+// ── Content monitor ──────────────────────────────────────────────────────────
+export const listMonitoredWorks = (params?: {
+  status?: string
+  queue?: 'all' | 'normal' | 'priority'
+  source_id?: string
+  account_id?: string
+  page?: number
+  limit?: number
+}) => apiClient.get<ApiResponse<MonitoredWork[]>>('/content-monitor/works', { params }).then((r) => r.data)
 
 // ── Model Providers ────────────────────────────────────────────────────────────
 export const listProviders = () =>

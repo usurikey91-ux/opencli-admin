@@ -105,6 +105,54 @@ export interface CollectedRecord {
   updated_at: string
 }
 
+export interface ContentSnapshot {
+  id: string
+  collected_at: string
+  view_count?: number | null
+  like_count?: number | null
+  comment_count?: number | null
+  favorite_count?: number | null
+  share_count?: number | null
+  metrics: Record<string, unknown>
+}
+
+export interface DetectionResult {
+  id: string
+  detector_version: string
+  metric_name: string
+  current_value?: number | null
+  baseline_value?: number | null
+  baseline_size: number
+  baseline_missing_count: number
+  relative_multiple?: number | null
+  hot_multiple: number
+  very_hot_multiple: number
+  enters_analysis: boolean
+  priority_analysis: boolean
+  status: string
+  evidence: Record<string, unknown>
+  evaluated_at: string
+}
+
+export interface MonitoredWork {
+  id: string
+  account_id: string
+  platform: string
+  account_handle?: string | null
+  account_display_name?: string | null
+  external_work_id: string
+  url?: string | null
+  title?: string | null
+  content?: string | null
+  author?: string | null
+  published_at?: string | null
+  first_seen_at: string
+  last_seen_at: string
+  status: string
+  latest_snapshot?: ContentSnapshot | null
+  detection?: DetectionResult | null
+}
+
 export interface CronSchedule {
   id: string
   source_id: string

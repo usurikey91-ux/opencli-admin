@@ -10,6 +10,7 @@ import WorkersPage from './pages/WorkersPage'
 import AgentsPage from './pages/AgentsPage'
 import ProvidersPage from './pages/ProvidersPage'
 import NodesPage from './pages/NodesPage'
+import ContentMonitorPage from './pages/ContentMonitorPage'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="sources" element={<SourcesPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="records" element={<RecordsPage />} />
+          <Route path="content-monitor" element={<ContentMonitorPage />} />
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="workers" element={<WorkersPage />} />

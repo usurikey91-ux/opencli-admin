@@ -41,6 +41,22 @@
 
 未指定主指标时只保存快照，不生成爆款判定。
 
+## 作品观察接口与排序
+
+统计结果通过只读接口提供给现有前端：
+
+```text
+GET /api/v1/content-monitor/works
+```
+
+可用参数：`queue=all|normal|priority`、`status`、`source_id`、
+`account_id`、`page`、`limit`。`normal` 只返回“火”作品，`priority` 只返回“特别火”作品。
+结果按“特别火优先 → 相对倍数从高到低 → 发布时间从新到旧”排序，
+从而把特别火作品优先交给后续拆解层，但不改变检测结论。
+
+现有 OpenCLI Admin 已增加“作品观察”只读页面。它只消费检测结果，
+不会触发采集、登录、发布或通知。
+
 ## 前端改造边界
 
 现有 OpenCLI Admin 前端就是产品界面的直接基础，保留当前的导航、卡片、

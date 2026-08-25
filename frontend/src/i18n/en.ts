@@ -6,6 +6,7 @@ const en: Translations = {
     sources: 'Sources',
     tasks: 'Tasks',
     records: 'Records',
+    contentMonitor: 'Content monitor',
     schedules: 'Schedules',
     agents: 'Agents',
     providers: 'Providers',

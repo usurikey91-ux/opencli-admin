@@ -21,6 +21,7 @@ import {
   Sun,
   Languages,
   Home,
+  Radar,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getDashboardStats } from '../api/endpoints'
@@ -30,6 +31,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/sources': '数据源',
   '/tasks': '任务',
   '/records': '采集记录',
+  '/content-monitor': '作品观察',
   '/schedules': '定时任务',
   '/notifications': '通知',
   '/nodes': '采集节点',
@@ -85,6 +87,7 @@ export default function Layout() {
     { to: '/sources',        label: t('nav.sources'),       icon: Database },
     { to: '/tasks',          label: t('nav.tasks'),         icon: ListChecks },
     { to: '/records',        label: t('nav.records'),       icon: FileText },
+    { to: '/content-monitor', label: t('nav.contentMonitor'), icon: Radar },
     { to: '/schedules',      label: t('nav.schedules'),     icon: Clock },
     { to: '/agents',         label: t('nav.agents'),        icon: Bot },
     { to: '/providers',      label: t('nav.providers'),     icon: KeyRound },

@@ -4,6 +4,7 @@ const zh = {
     sources: '数据源',
     tasks: '任务',
     records: '采集记录',
+    contentMonitor: '作品观察',
     schedules: '定时计划',
     agents: '智能体',
     providers: '模型提供商',
