@@ -153,6 +153,17 @@ export interface MonitoredWork {
   detection?: DetectionResult | null
 }
 
+export interface ContentAccount {
+  id: string
+  source_id?: string | null
+  platform: string
+  external_account_id: string
+  handle?: string | null
+  display_name?: string | null
+  profile_url?: string | null
+  raw_profile: Record<string, unknown>
+}
+
 export interface CronSchedule {
   id: string
   source_id: string

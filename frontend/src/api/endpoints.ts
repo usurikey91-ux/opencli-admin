@@ -7,6 +7,7 @@ import type {
   ChromeEndpoint,
   CollectedRecord,
   MonitoredWork,
+  ContentAccount,
   CollectionTask,
   CronSchedule,
   DataSource,
@@ -147,6 +148,17 @@ export const listMonitoredWorks = (params?: {
   page?: number
   limit?: number
 }) => apiClient.get<ApiResponse<MonitoredWork[]>>('/content-monitor/works', { params }).then((r) => r.data)
+
+export const listContentAccounts = (params?: { platform?: string; page?: number; limit?: number }) =>
+  apiClient.get<ApiResponse<ContentAccount[]>>('/content-monitor/accounts', { params }).then((r) => r.data)
+
+export const importContentAccounts = (items: Array<{
+  platform: string
+  external_account_id: string
+  handle?: string
+  display_name?: string
+  profile_url?: string
+}>) => apiClient.post<ApiResponse<Record<string, unknown>>>('/content-monitor/accounts/import', { items }).then((r) => r.data.data)
 
 // ── Model Providers ────────────────────────────────────────────────────────────
 export const listProviders = () =>
