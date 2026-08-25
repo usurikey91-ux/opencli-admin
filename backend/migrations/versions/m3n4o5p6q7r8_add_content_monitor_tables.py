@@ -131,6 +131,7 @@ def upgrade() -> None:
         sa.Column("current_value", sa.BigInteger(), nullable=True),
         sa.Column("baseline_value", sa.Float(), nullable=True),
         sa.Column("baseline_size", sa.Integer(), nullable=False),
+        sa.Column("baseline_missing_count", sa.Integer(), nullable=False),
         sa.Column("relative_multiple", sa.Float(), nullable=True),
         sa.Column("hot_multiple", sa.Float(), nullable=False),
         sa.Column("very_hot_multiple", sa.Float(), nullable=False),

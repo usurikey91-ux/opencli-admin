@@ -50,16 +50,17 @@ def test_five_times_account_median_enters_priority_analysis_queue():
     assert decision.priority_analysis is True
 
 
-def test_detector_uses_only_latest_twenty_valid_values():
+def test_missing_metric_in_latest_twenty_is_not_replaced_by_older_work():
     decision = evaluate_public_metric(
         metric_name="like_count",
         current_value=2_000,
-        baseline_values=[None, -1, *BASELINE, 1_000_000],
+        baseline_values=[None, *([1_000] * 19), 1_000_000],
     )
 
     assert decision.baseline_size == 20
-    assert decision.baseline_value == 1_000
-    assert decision.status == "hot"
+    assert decision.baseline_missing_count == 1
+    assert decision.baseline_value is None
+    assert decision.status == "insufficient_data"
 
 
 def test_fewer_than_twenty_valid_works_is_insufficient():
@@ -71,6 +72,7 @@ def test_fewer_than_twenty_valid_works_is_insufficient():
 
     assert decision.status == "insufficient_data"
     assert decision.baseline_size == 19
+    assert decision.baseline_missing_count == 0
     assert decision.enters_analysis is False
 
 
