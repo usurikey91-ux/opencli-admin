@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.content_monitor import ContentAccount, ContentWork, EngagementSnapshot
 from backend.models.source import DataSource
+from backend.monitoring_policy import evaluate_snapshot_policy
 
 
 _ACCOUNT_ID_KEYS = ("author_id", "user_id", "uid", "channel_id", "account_id", "owner_id")
@@ -180,6 +181,7 @@ async def store_content_snapshots(
     work_cache: dict[tuple[str, str], ContentWork] = {}
     task_work_ids: set[str] = set()
     stored = 0
+    observed_now = _utcnow()
 
     for raw, normalized, content_hash in normalized_triples:
         account_external_id, handle, display_name, profile_url = _account_identity(
@@ -216,6 +218,7 @@ async def store_content_snapshots(
         external_work_id = _work_identity(raw, normalized, content_hash)
         work_key = (account.id, external_work_id)
         work = work_cache.get(work_key)
+        is_new_work = False
         if work is None:
             result = await session.execute(
                 select(ContentWork).where(
@@ -226,7 +229,7 @@ async def store_content_snapshots(
             work = result.scalar_one_or_none()
             published_raw = normalized.get("published_at") or None
             if work is None:
-                now = _utcnow()
+                is_new_work = True
                 work = ContentWork(
                     account_id=account.id,
                     source_id=source_id,
@@ -237,8 +240,8 @@ async def store_content_snapshots(
                     author=normalized.get("author") or None,
                     published_at=_parse_published_at(published_raw),
                     published_at_raw=str(published_raw) if published_raw else None,
-                    first_seen_at=now,
-                    last_seen_at=now,
+                    first_seen_at=observed_now,
+                    last_seen_at=observed_now,
                     raw_identity={"content_hash": content_hash},
                 )
                 session.add(work)
@@ -253,7 +256,7 @@ async def store_content_snapshots(
                     str(published_raw) if published_raw else work.published_at_raw
                 )
                 work.published_at = _parse_published_at(published_raw) or work.published_at
-                work.last_seen_at = _utcnow()
+                work.last_seen_at = observed_now
             work_cache[work_key] = work
 
         if work.id in task_work_ids:
@@ -269,11 +272,32 @@ async def store_content_snapshots(
         if existing.scalar_one_or_none() is not None:
             continue
 
+        if not is_new_work:
+            latest_snapshot = await session.execute(
+                select(EngagementSnapshot.collected_at)
+                .where(EngagementSnapshot.work_id == work.id)
+                .order_by(EngagementSnapshot.collected_at.desc())
+                .limit(1)
+            )
+            latest_snapshot_at = latest_snapshot.scalar_one_or_none()
+            if latest_snapshot_at is not None:
+                if work.published_at is None:
+                    # The confirmed schedule is relative to publication time.
+                    # Until a fallback is agreed, do not invent one.
+                    continue
+                policy = evaluate_snapshot_policy(
+                    published_at=work.published_at,
+                    last_snapshot_at=latest_snapshot_at,
+                    now=observed_now,
+                )
+                if not policy.due:
+                    continue
+
         metrics = extract_metrics(raw)
         snapshot = EngagementSnapshot(
             work_id=work.id,
             task_id=task_id,
-            collected_at=_utcnow(),
+            collected_at=observed_now,
             metrics={key: value for key, value in metrics.items() if value is not None},
             raw_data=raw,
             **metrics,

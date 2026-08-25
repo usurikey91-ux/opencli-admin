@@ -30,7 +30,7 @@ def test_extract_metrics_preserves_missing_fields():
 
 
 @pytest.mark.asyncio
-async def test_repeated_work_creates_snapshots_without_duplicate_records(db_session):
+async def test_work_without_publish_time_gets_only_first_snapshot(db_session):
     from backend.models.source import DataSource
     from backend.models.task import CollectionTask
 
@@ -70,7 +70,7 @@ async def test_repeated_work_creates_snapshots_without_duplicate_records(db_sess
     assert second_records == []
     assert second_skipped == 1
     assert first_snapshots == 1
-    assert second_snapshots == 1
+    assert second_snapshots == 0
 
     record_count = await db_session.scalar(select(func.count()).select_from(CollectedRecord))
     account_count = await db_session.scalar(select(func.count()).select_from(ContentAccount))
@@ -84,6 +84,64 @@ async def test_repeated_work_creates_snapshots_without_duplicate_records(db_sess
     assert record_count == 1
     assert account_count == 1
     assert work_count == 1
-    assert len(snapshots) == 2
-    assert [snapshot.like_count for snapshot in snapshots] == [100, 250]
-    assert [snapshot.comment_count for snapshot in snapshots] == [10, 25]
+    assert len(snapshots) == 1
+    assert [snapshot.like_count for snapshot in snapshots] == [100]
+    assert [snapshot.comment_count for snapshot in snapshots] == [10]
+
+
+@pytest.mark.asyncio
+async def test_recent_work_respects_fixed_four_hour_snapshot_interval(
+    db_session, monkeypatch
+):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+    from backend.pipeline import content_snapshotter
+
+    observed_at = datetime(2026, 8, 25, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(content_snapshotter, "_utcnow", lambda: observed_at)
+
+    source = DataSource(
+        name="Public creator",
+        channel_type="opencli",
+        channel_config={"site": "example", "command": "user-posts"},
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    raw = {
+        "post_id": "recent-work",
+        "author_id": "u-1",
+        "author": "Creator",
+        "url": "https://example.com/recent-work",
+        "published_at": (observed_at - timedelta(hours=1)).isoformat(),
+        "likes": 100,
+    }
+
+    task1 = CollectionTask(source_id=source.id, trigger_type="scheduled", parameters={})
+    db_session.add(task1)
+    await db_session.flush()
+    _, _, first_snapshots = await store_records(
+        db_session, task1.id, source.id, normalize_items([raw], source.id)
+    )
+
+    observed_at += timedelta(hours=3)
+    task2 = CollectionTask(source_id=source.id, trigger_type="scheduled", parameters={})
+    db_session.add(task2)
+    await db_session.flush()
+    _, _, early_snapshots = await store_records(
+        db_session, task2.id, source.id, normalize_items([{**raw, "likes": 200}], source.id)
+    )
+
+    observed_at += timedelta(hours=1)
+    task3 = CollectionTask(source_id=source.id, trigger_type="scheduled", parameters={})
+    db_session.add(task3)
+    await db_session.flush()
+    _, _, due_snapshots = await store_records(
+        db_session, task3.id, source.id, normalize_items([{**raw, "likes": 300}], source.id)
+    )
+
+    assert first_snapshots == 1
+    assert early_snapshots == 0
+    assert due_snapshots == 1

@@ -8,10 +8,8 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Index,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -139,15 +137,11 @@ class DetectionResult(TimestampMixin):
     detector_version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
     metric_name: Mapped[str] = mapped_column(String(64), nullable=False)
     current_value: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    baseline_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    baseline_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    relative_multiple: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    absolute_threshold: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    relative_threshold: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    absolute_pass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    relative_pass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    hot_threshold: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    very_hot_threshold: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    enters_analysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    priority_analysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)
-    confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="low")
     evidence: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     evaluated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
