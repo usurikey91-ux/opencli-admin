@@ -56,4 +56,3 @@ async def list_accounts(
     total = (await session.execute(count_query)).scalar_one()
     rows = await session.execute(query.offset((page - 1) * limit).limit(limit))
     return list(rows.scalars().all()), total
-

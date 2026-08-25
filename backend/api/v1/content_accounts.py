@@ -34,7 +34,6 @@ async def list_content_accounts(
         ),
     )
 
-
 @router.post("/import", response_model=ApiResponse[dict], status_code=201)
 async def import_content_accounts(
     body: ContentAccountImportRequest,
@@ -49,4 +48,3 @@ async def import_content_accounts(
             "accounts": [ContentAccountRead.model_validate(account).model_dump() for account in accounts],
         }
     )
-

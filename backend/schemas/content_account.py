@@ -28,4 +28,3 @@ class ContentAccountRead(UTCModel):
     raw_profile: dict
 
     model_config = {"from_attributes": True}
-

@@ -25,4 +25,3 @@ async def test_import_accounts_is_idempotent(db_session):
     assert first[0].id == second[0].id
     assert second[0].display_name == "Creator updated"
     assert (await db_session.get(ContentAccount, first[0].id)).platform == "example"
-
