@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f8f6f1"/>
+  <style>
+    .title{font:700 30px Arial,"Microsoft YaHei",sans-serif;fill:#111}
+    .subtitle{font:400 16px Arial,"Microsoft YaHei",sans-serif;fill:#555}
+    .h{font:700 18px Arial,"Microsoft YaHei",sans-serif;fill:#111}
+    .p{font:400 14px Arial,"Microsoft YaHei",sans-serif;fill:#333}
+    .small{font:400 12px Arial,"Microsoft YaHei",sans-serif;fill:#555}
+    .box{fill:#fff;stroke:#222;stroke-width:2;rx:16}
+    .done{fill:#e9f0ff;stroke:#002fa7}
+    .todo{fill:#fff7e8;stroke:#d97b00}
+    .feedback{fill:#eef8d9;stroke:#6b8e23}
+    .blocked{fill:#f5f5f5;stroke:#999;stroke-dasharray:7 6}
+    .arrow{stroke:#002fa7;stroke-width:4;fill:none;marker-end:url(#arrow)}
+    .return{stroke:#6b8e23;stroke-width:3;fill:none;stroke-dasharray:8 7;marker-end:url(#arrowGreen)}
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#002fa7"/></marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#6b8e23"/></marker>
+  </defs>
+
+  <text x="70" y="70" class="title">自媒体爆款参考与二创系统</text>
+  <text x="70" y="102" class="subtitle">目标：只分析相对对标账号日常表现明显更好的作品，再把有效机制转成可发布内容</text>
+
+  <rect x="70" y="150" width="260" height="150" class="box done"/>
+  <text x="95" y="185" class="h">1. 对标账号</text>
+  <text x="95" y="215" class="p">导入账号 / 账号链接</text>
+  <text x="95" y="242" class="p">跨平台、少量账号</text>
+  <text x="95" y="269" class="small">已完成：账号身份导入</text>
+
+  <rect x="390" y="150" width="260" height="150" class="box done"/>
+  <text x="415" y="185" class="h">2. OpenCLI Admin</text>
+  <text x="415" y="215" class="p">发现新作品</text>
+  <text x="415" y="242" class="p">保存公开数据快照</text>
+  <text x="415" y="269" class="small">已完成：采集底座 + 快照</text>
+
+  <rect x="710" y="150" width="260" height="150" class="box done"/>
+  <text x="735" y="185" class="h">3. 公开热度检测</text>
+  <text x="735" y="215" class="p">最近20条账号基线</text>
+  <text x="735" y="242" class="p">可用公开指标综合倍数</text>
+  <text x="735" y="269" class="small">已完成：火 / 特别火排序</text>
+
+  <rect x="1030" y="150" width="260" height="150" class="box todo"/>
+  <text x="1055" y="185" class="h">4. 素材获取</text>
+  <text x="1055" y="215" class="p">只获取火作品</text>
+  <text x="1055" y="242" class="p">视频 / 音频 / 字幕 / 评论</text>
+  <text x="1055" y="269" class="small">待接入：素材下载与整理</text>
+
+  <path d="M330 225 H390" class="arrow"/><path d="M650 225 H710" class="arrow"/><path d="M970 225 H1030" class="arrow"/>
+
+  <rect x="220" y="390" width="300" height="170" class="box todo"/>
+  <text x="250" y="430" class="h">5. 视频＋文案拆解</text>
+  <text x="250" y="462" class="p">画面 / 声音 / 字幕 / 节奏</text>
+  <text x="250" y="489" class="p">评论需求与传播入口</text>
+  <text x="250" y="516" class="p">证据 → 机制假设 → 置信度</text>
+  <text x="250" y="542" class="small">不声称找到真实因果</text>
+
+  <rect x="600" y="390" width="300" height="170" class="box todo"/>
+  <text x="630" y="430" class="h">6. 二创生成</text>
+  <text x="630" y="462" class="p">根据原视频自主决定改编程度</text>
+  <text x="630" y="489" class="p">选题 + 完整脚本</text>
+  <text x="630" y="516" class="p">避免换词仿写与模板腔</text>
+  <text x="630" y="542" class="small">数量不是永远固定的硬规则</text>
+
+  <rect x="980" y="390" width="300" height="170" class="box todo"/>
+  <text x="1010" y="430" class="h">7. 发布前检查</text>
+  <text x="1010" y="462" class="p">钩子 / 完播风险 / 收藏价值</text>
+  <text x="1010" y="489" class="p">标题 / 画面 / 字幕 / 隐私</text>
+  <text x="1010" y="516" class="p">平台合规与素材风险</text>
+  <text x="1010" y="542" class="small">只检查，不自动发布</text>
+
+  <path d="M1160 300 V350 H370 V390" class="arrow"/>
+  <path d="M520 475 H600" class="arrow"/><path d="M900 475 H980" class="arrow"/>
+
+  <rect x="500" y="670" width="330" height="145" class="box feedback"/>
+  <text x="535" y="710" class="h">8. 自己发布后的反馈</text>
+  <text x="535" y="742" class="p">播放 / 完播 / 点赞 / 收藏</text>
+  <text x="535" y="769" class="p">记录采用了哪种改编机制</text>
+  <text x="535" y="796" class="small">后续学习：哪些机制对你有效</text>
+
+  <path d="M1130 560 V625 H830 V670" class="arrow"/>
+  <path d="M500 742 H160 V340 H840 V300" class="return"/>
+  <text x="165" y="325" class="small" fill="#6b8e23">反馈只回流到机制权重，不改写历史证据</text>
+
+  <rect x="70" y="670" width="300" height="145" class="box blocked"/>
+  <text x="100" y="710" class="h">暂不启用</text>
+  <text x="100" y="742" class="p">Cheat on Content 自动执行</text>
+  <text x="100" y="769" class="p">自动发布 / 自动评论 / 通知</text>
+  <text x="100" y="796" class="small">保持本地、可替换、可审查</text>
+
+  <rect x="1000" y="670" width="370" height="145" class="box done"/>
+  <text x="1030" y="710" class="h">当前项目定位</text>
+  <text x="1030" y="742" class="p">采集与判断底座已成形</text>
+  <text x="1030" y="769" class="p">内容分析与反馈闭环尚未接通</text>
+  <text x="1030" y="796" class="small">下一步：先接通真实平台采集</text>
+</svg>
