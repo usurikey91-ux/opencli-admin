@@ -37,7 +37,6 @@ def _to_read(work) -> MonitoredWorkRead:
         detection=DetectionRead.model_validate(detection) if detection else None,
     )
 
-
 @router.get("/works", response_model=ApiResponse[list[MonitoredWorkRead]])
 async def list_monitored_works(
     status: Optional[str] = Query(None),
@@ -70,4 +69,3 @@ async def list_monitored_works(
             pages=max(1, -(-total // limit)),
         ),
     )
-

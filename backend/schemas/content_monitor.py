@@ -18,7 +18,6 @@ class ContentSnapshotRead(UTCModel):
 
     model_config = {"from_attributes": True}
 
-
 class DetectionRead(UTCModel):
     id: str
     detector_version: str
@@ -56,4 +55,3 @@ class MonitoredWorkRead(UTCModel):
     status: str
     latest_snapshot: Optional[ContentSnapshotRead] = None
     detection: Optional[DetectionRead] = None
-

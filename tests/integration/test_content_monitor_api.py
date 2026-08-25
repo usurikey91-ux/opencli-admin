@@ -9,4 +9,3 @@ async def test_content_monitor_works_endpoint_returns_empty_page(client):
     assert payload["success"] is True
     assert payload["data"] == []
     assert payload["meta"]["total"] == 0
-
