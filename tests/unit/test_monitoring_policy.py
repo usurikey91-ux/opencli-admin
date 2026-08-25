@@ -69,6 +69,14 @@ def test_monitoring_stops_at_seven_days():
         now=NOW,
     )
 
-    assert policy.phase == "stopped"
-    assert policy.due is False
-    assert policy.next_due_at is None
+    assert policy.phase == "final_7d"
+    assert policy.due is True
+
+    stopped = evaluate_snapshot_policy(
+        published_at=NOW - timedelta(days=7),
+        last_snapshot_at=NOW,
+        now=NOW,
+    )
+    assert stopped.phase == "stopped"
+    assert stopped.due is False
+    assert stopped.next_due_at is None

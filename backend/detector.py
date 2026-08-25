@@ -18,6 +18,7 @@ class DetectionDecision:
     status: str
     metric_name: str
     current_value: int | None
+    finalized: bool
     baseline_value: float | None
     baseline_size: int
     baseline_missing_count: int
@@ -59,6 +60,7 @@ def evaluate_public_metric(
     metric_name: str,
     current_value: int | None,
     baseline_values: Iterable[int | None],
+    finalized: bool,
 ) -> DetectionDecision:
     """Compare a work with its account's latest 20 valid prior works.
 
@@ -73,11 +75,29 @@ def evaluate_public_metric(
     )
     parsed_current_value = _parse_metric(current_value)
 
+    if not finalized:
+        return DetectionDecision(
+            status="pending_final_window",
+            metric_name=metric_name,
+            current_value=parsed_current_value,
+            finalized=False,
+            baseline_value=None,
+            baseline_size=baseline_size,
+            baseline_missing_count=baseline_missing_count,
+            relative_multiple=None,
+            hot_multiple=HOT_MULTIPLE,
+            very_hot_multiple=VERY_HOT_MULTIPLE,
+            enters_analysis=False,
+            priority_analysis=False,
+            reasons=("尚未到达发布后7天的最终观察窗口",),
+        )
+
     if parsed_current_value is None:
         return DetectionDecision(
             status="insufficient_data",
             metric_name=metric_name,
             current_value=None,
+            finalized=True,
             baseline_value=None,
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
@@ -94,6 +114,7 @@ def evaluate_public_metric(
             status="insufficient_data",
             metric_name=metric_name,
             current_value=parsed_current_value,
+            finalized=True,
             baseline_value=None,
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
@@ -110,6 +131,7 @@ def evaluate_public_metric(
             status="insufficient_data",
             metric_name=metric_name,
             current_value=parsed_current_value,
+            finalized=True,
             baseline_value=None,
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
@@ -130,6 +152,7 @@ def evaluate_public_metric(
             status="insufficient_data",
             metric_name=metric_name,
             current_value=parsed_current_value,
+            finalized=True,
             baseline_value=baseline,
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
@@ -159,6 +182,7 @@ def evaluate_public_metric(
         status=status,
         metric_name=metric_name,
         current_value=parsed_current_value,
+        finalized=True,
         baseline_value=baseline,
         baseline_size=baseline_size,
         baseline_missing_count=baseline_missing_count,

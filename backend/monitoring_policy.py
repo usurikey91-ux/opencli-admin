@@ -42,12 +42,17 @@ def evaluate_snapshot_policy(
 
     if last_snapshot_at is None:
         return SnapshotPolicy(phase="first_seen", due=True, next_due_at=observed_now)
+
+    last_snapshot = _as_utc(last_snapshot_at)
+    final_at = published + MONITORING_WINDOW
     if age >= MONITORING_WINDOW:
+        if last_snapshot < final_at:
+            return SnapshotPolicy(phase="final_7d", due=True, next_due_at=observed_now)
         return SnapshotPolicy(phase="stopped", due=False, next_due_at=None)
 
     interval = EARLY_INTERVAL if age <= EARLY_WINDOW else LATE_INTERVAL
     phase = "early_4h" if age <= EARLY_WINDOW else "daily"
-    next_due_at = _as_utc(last_snapshot_at) + interval
+    next_due_at = last_snapshot + interval
     return SnapshotPolicy(
         phase=phase,
         due=observed_now >= next_due_at,
