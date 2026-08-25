@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.detector import evaluate_public_metric
+from backend.detector import evaluate_public_metrics
 from backend.models.content_monitor import ContentWork, DetectionResult, EngagementSnapshot
 
 
@@ -22,19 +22,33 @@ _METRIC_ATTRIBUTES = {
 }
 
 
-def configured_metric(source_config: dict[str, Any]) -> str | None:
-    """Read a verified primary public metric without guessing a platform field."""
+def configured_metrics(source_config: dict[str, Any]) -> list[str] | None:
+    """Read explicitly verified metrics, or enable all supported public metrics."""
     monitoring = source_config.get("content_monitoring")
     if not isinstance(monitoring, dict):
         return None
-    metric_name = monitoring.get("metric_name")
-    if metric_name not in _METRIC_ATTRIBUTES:
-        return None
-    return str(metric_name)
+    if "metric_name" in monitoring:
+        metric_name = monitoring.get("metric_name")
+        return [str(metric_name)] if metric_name in _METRIC_ATTRIBUTES else None
+    if "metric_names" in monitoring:
+        metric_names = monitoring.get("metric_names")
+        if not isinstance(metric_names, list):
+            return None
+        valid = [str(name) for name in metric_names if name in _METRIC_ATTRIBUTES]
+        return valid or None
+    return list(_METRIC_ATTRIBUTES)
 
 
-def _snapshot_metric(snapshot: EngagementSnapshot, metric_name: str) -> int | None:
-    return getattr(snapshot, _METRIC_ATTRIBUTES[metric_name])
+def configured_metric(source_config: dict[str, Any]) -> str | None:
+    """Backward-compatible single-metric accessor for older callers."""
+    metrics = configured_metrics(source_config)
+    return metrics[0] if metrics and len(metrics) == 1 else None
+
+
+def _snapshot_metrics(snapshot: EngagementSnapshot | None, metric_names: list[str]) -> dict[str, int | None]:
+    if snapshot is None:
+        return {name: None for name in metric_names}
+    return {name: getattr(snapshot, _METRIC_ATTRIBUTES[name]) for name in metric_names}
 
 
 async def _final_snapshot_for_work(
@@ -60,7 +74,8 @@ async def evaluate_final_snapshot(
     session: AsyncSession,
     *,
     snapshot_id: str,
-    metric_name: str,
+    metric_name: str | None = None,
+    metric_names: list[str] | None = None,
 ) -> DetectionResult | None:
     """Evaluate one work only after its final seven-day snapshot exists.
 
@@ -68,8 +83,9 @@ async def evaluate_final_snapshot(
     time. Every one of those works must have a final snapshot and the selected
     metric; no content-type or suspected-promotion filter is applied.
     """
-    if metric_name not in _METRIC_ATTRIBUTES:
-        raise ValueError(f"Unsupported content metric: {metric_name}")
+    selected_metrics = metric_names or ([metric_name] if metric_name else list(_METRIC_ATTRIBUTES))
+    if not selected_metrics or any(name not in _METRIC_ATTRIBUTES for name in selected_metrics):
+        raise ValueError(f"Unsupported content metrics: {selected_metrics}")
 
     snapshot = await session.get(EngagementSnapshot, snapshot_id)
     if snapshot is None:
@@ -90,18 +106,14 @@ async def evaluate_final_snapshot(
         .limit(20)
     )
     baseline_works = list(works_result.scalars().all())
-    baseline_values: list[int | None] = []
+    baseline_values: list[dict[str, int | None]] = []
     for baseline_work in baseline_works:
         baseline_snapshot = await _final_snapshot_for_work(session, baseline_work)
-        baseline_values.append(
-            _snapshot_metric(baseline_snapshot, metric_name)
-            if baseline_snapshot is not None
-            else None
-        )
+        baseline_values.append(_snapshot_metrics(baseline_snapshot, selected_metrics))
 
-    decision = evaluate_public_metric(
-        metric_name=metric_name,
-        current_value=_snapshot_metric(snapshot, metric_name),
+    decision = evaluate_public_metrics(
+        metric_names=selected_metrics,
+        current_values=_snapshot_metrics(snapshot, selected_metrics),
         baseline_values=baseline_values,
         finalized=True,
     )

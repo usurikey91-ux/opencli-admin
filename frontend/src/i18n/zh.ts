@@ -336,6 +336,8 @@ const zh = {
     bridgeSetupStep1: '在 .env 中设置 BROWSER_BRIDGE_ENABLED=true',
     bridgeSetupStep2: '重启 chrome 容器：docker compose up -d chrome-1',
     bridgeDockerNote: '触发或定时任务时需选择开启了 Bridge 的 Chrome 实例',
+    enableContentMonitoring: '启用对标作品热度检测',
+    contentMonitoringHint: '使用实际能拿到的公开互动数据综合判断；完播率只用于你自己的作品反馈',
   },
 }
 

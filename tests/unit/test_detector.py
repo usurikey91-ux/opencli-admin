@@ -5,6 +5,7 @@ from backend.detector import (
     HOT_MULTIPLE,
     VERY_HOT_MULTIPLE,
     evaluate_public_metric,
+    evaluate_public_metrics,
 )
 
 
@@ -111,3 +112,23 @@ def test_non_final_work_never_enters_analysis_queue():
     assert decision.status == "pending_final_window"
     assert decision.enters_analysis is False
     assert decision.priority_analysis is False
+
+
+def test_composite_detector_uses_available_public_metrics_without_complete_rows():
+    baseline = [
+        {"like_count": 1_000, "favorite_count": 100},
+        {"like_count": 1_000},
+        {"like_count": 1_000, "favorite_count": 100},
+    ] * 7
+    decision = evaluate_public_metrics(
+        metric_names=["like_count", "favorite_count", "share_count"],
+        current_values={"like_count": 2_000, "favorite_count": None, "share_count": 10},
+        baseline_values=baseline[:20],
+        finalized=True,
+    )
+
+    assert decision.status == "hot"
+    assert decision.enters_analysis is True
+    assert decision.metric_name == "public_composite"
+    assert "like_count" in (decision.component_multiples or {})
+    assert decision.baseline_missing_count == 0

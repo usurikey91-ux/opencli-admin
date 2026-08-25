@@ -1,7 +1,8 @@
-"""Deterministic, non-AI detector for account-relative popular works."""
+"""Deterministic, non-AI detectors for account-relative popular works."""
 
 from dataclasses import asdict, dataclass
 from itertools import islice
+from math import exp, log
 from statistics import median
 from typing import Iterable
 
@@ -28,6 +29,8 @@ class DetectionDecision:
     enters_analysis: bool
     priority_analysis: bool
     reasons: tuple[str, ...]
+    metric_values: dict[str, int] | None = None
+    component_multiples: dict[str, float] | None = None
 
     def evidence(self) -> dict:
         data = asdict(self)
@@ -196,4 +199,170 @@ def evaluate_public_metric(
             f"相对倍数={relative_multiple:.2f}，火={HOT_MULTIPLE:g}倍，"
             f"特别火={VERY_HOT_MULTIPLE:g}倍",
         ),
+    )
+
+
+_DEFAULT_PUBLIC_METRIC_WEIGHTS = {
+    "view_count": 1.0,
+    "like_count": 1.5,
+    "comment_count": 1.0,
+    "favorite_count": 1.5,
+    "share_count": 1.0,
+}
+
+
+def _parse_metric_mapping(values: dict[str, int | None], metric_names: tuple[str, ...]) -> dict[str, int]:
+    return {
+        name: parsed
+        for name in metric_names
+        if (parsed := _parse_metric(values.get(name))) is not None
+    }
+
+
+def evaluate_public_metrics(
+    *,
+    metric_names: Iterable[str],
+    current_values: dict[str, int | None],
+    baseline_values: Iterable[dict[str, int | None]],
+    finalized: bool,
+) -> DetectionDecision:
+    """Classify a work using whatever public metrics are actually available.
+
+    The first 20 prior works are still required, but an individual missing
+    metric no longer invalidates the whole baseline. Each metric contributes
+    only when it has a positive median baseline and a current value. The final
+    relative multiple is a weighted geometric mean of component multiples;
+    likes and favorites receive a modestly higher weight because they are the
+    most useful public interaction signals when views are unavailable.
+    """
+    names = tuple(dict.fromkeys(metric_names))
+    raw_baseline = list(islice(baseline_values, BASELINE_WINDOW))
+    current_metrics = _parse_metric_mapping(current_values, names)
+    baseline_size = len(raw_baseline)
+    parsed_baselines = [_parse_metric_mapping(row, names) for row in raw_baseline]
+    baseline_missing_count = sum(1 for row in parsed_baselines if not row)
+
+    if not finalized:
+        return DetectionDecision(
+            status="pending_final_window",
+            metric_name="public_composite",
+            current_value=None,
+            finalized=False,
+            baseline_value=None,
+            baseline_size=baseline_size,
+            baseline_missing_count=baseline_missing_count,
+            relative_multiple=None,
+            hot_multiple=HOT_MULTIPLE,
+            very_hot_multiple=VERY_HOT_MULTIPLE,
+            enters_analysis=False,
+            priority_analysis=False,
+            reasons=("尚未到达发布后7天的最终观察窗口",),
+            metric_values=current_metrics,
+            component_multiples={},
+        )
+
+    if baseline_size < BASELINE_WINDOW:
+        return DetectionDecision(
+            status="insufficient_data",
+            metric_name="public_composite",
+            current_value=None,
+            finalized=True,
+            baseline_value=None,
+            baseline_size=baseline_size,
+            baseline_missing_count=baseline_missing_count,
+            relative_multiple=None,
+            hot_multiple=HOT_MULTIPLE,
+            very_hot_multiple=VERY_HOT_MULTIPLE,
+            enters_analysis=False,
+            priority_analysis=False,
+            reasons=(f"只取到最近 {baseline_size} 条作品，需要完整的 20 条",),
+            metric_values=current_metrics,
+            component_multiples={},
+        )
+
+    if not current_metrics:
+        return DetectionDecision(
+            status="insufficient_data",
+            metric_name="public_composite",
+            current_value=None,
+            finalized=True,
+            baseline_value=None,
+            baseline_size=baseline_size,
+            baseline_missing_count=baseline_missing_count,
+            relative_multiple=None,
+            hot_multiple=HOT_MULTIPLE,
+            very_hot_multiple=VERY_HOT_MULTIPLE,
+            enters_analysis=False,
+            priority_analysis=False,
+            reasons=("当前作品没有可用的公开互动指标",),
+            metric_values={},
+            component_multiples={},
+        )
+
+    component_multiples: dict[str, float] = {}
+    component_baselines: dict[str, float] = {}
+    for name in names:
+        current = current_metrics.get(name)
+        samples = [row[name] for row in parsed_baselines if name in row]
+        if current is None or len(samples) < 3:
+            continue
+        baseline = float(median(samples))
+        if baseline > 0:
+            component_baselines[name] = baseline
+            component_multiples[name] = current / baseline
+
+    if not component_multiples:
+        return DetectionDecision(
+            status="insufficient_data",
+            metric_name="public_composite",
+            current_value=max(current_metrics.values(), default=None),
+            finalized=True,
+            baseline_value=None,
+            baseline_size=baseline_size,
+            baseline_missing_count=baseline_missing_count,
+            relative_multiple=None,
+            hot_multiple=HOT_MULTIPLE,
+            very_hot_multiple=VERY_HOT_MULTIPLE,
+            enters_analysis=False,
+            priority_analysis=False,
+            reasons=("公开指标存在，但没有足够的历史样本形成可比较基线",),
+            metric_values=current_metrics,
+            component_multiples={},
+        )
+
+    total_weight = sum(_DEFAULT_PUBLIC_METRIC_WEIGHTS.get(name, 1.0) for name in component_multiples)
+    relative_multiple = exp(
+        sum(
+            _DEFAULT_PUBLIC_METRIC_WEIGHTS.get(name, 1.0) * log(max(multiple, 0.000001))
+            for name, multiple in component_multiples.items()
+        )
+        / total_weight
+    )
+    representative = max(component_multiples, key=component_multiples.get)
+    if relative_multiple >= VERY_HOT_MULTIPLE:
+        status, enters_analysis, priority_analysis = "very_hot", True, True
+    elif relative_multiple >= HOT_MULTIPLE:
+        status, enters_analysis, priority_analysis = "hot", True, False
+    else:
+        status, enters_analysis, priority_analysis = "observing", False, False
+
+    return DetectionDecision(
+        status=status,
+        metric_name="public_composite",
+        current_value=current_metrics[representative],
+        finalized=True,
+        baseline_value=component_baselines[representative],
+        baseline_size=baseline_size,
+        baseline_missing_count=baseline_missing_count,
+        relative_multiple=relative_multiple,
+        hot_multiple=HOT_MULTIPLE,
+        very_hot_multiple=VERY_HOT_MULTIPLE,
+        enters_analysis=enters_analysis,
+        priority_analysis=priority_analysis,
+        reasons=(
+            f"综合 {len(component_multiples)} 个可用公开指标，代表指标={representative}",
+            f"综合相对倍数={relative_multiple:.2f}，火={HOT_MULTIPLE:g}倍，特别火={VERY_HOT_MULTIPLE:g}倍",
+        ),
+        metric_values=current_metrics,
+        component_multiples=component_multiples,
     )

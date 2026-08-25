@@ -308,14 +308,14 @@ async def store_content_snapshots(
         stored += 1
 
     await session.flush()
-    from backend.services.content_detection import configured_metric, evaluate_final_snapshot
+    from backend.services.content_detection import configured_metrics, evaluate_final_snapshot
 
-    metric_name = configured_metric(source.channel_config)
-    if metric_name:
+    metric_names = configured_metrics(source.channel_config)
+    if metric_names:
         for snapshot in new_snapshots:
             await evaluate_final_snapshot(
                 session,
                 snapshot_id=snapshot.id,
-                metric_name=metric_name,
+                metric_names=metric_names,
             )
     return stored

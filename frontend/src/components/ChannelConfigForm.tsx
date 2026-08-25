@@ -770,6 +770,7 @@ function OpenCLIConfig({
   const currentCommand = (config.command as string) ?? ''
   const siteCommands = COMMANDS_BY_SITE[currentSite] ?? []
   const currentPreset = siteCommands.find((p) => p.command === currentCommand)
+  const monitoring = (config.content_monitoring as Record<string, unknown>) ?? null
 
   const applyPreset = (preset: Preset) => {
     const newPairs = objToKv(preset.args)
@@ -857,6 +858,22 @@ function OpenCLIConfig({
           ]}
         />
       </Field>
+
+      <label className="flex items-start gap-2 rounded-lg border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={monitoring !== null}
+          onChange={(e) => onChange({
+            ...config,
+            content_monitoring: e.target.checked ? {} : undefined,
+          })}
+          className="mt-0.5 rounded"
+        />
+        <span>
+          <span className="block text-sm font-medium text-gray-700 dark:text-gray-200">{t('channelConfig.enableContentMonitoring')}</span>
+          <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">{t('channelConfig.contentMonitoringHint')}</span>
+        </span>
+      </label>
 
     </div>
   )
