@@ -160,6 +160,9 @@ export const importContentAccounts = (items: Array<{
   profile_url?: string
 }>) => apiClient.post<ApiResponse<Record<string, unknown>>>('/content-monitor/accounts/import', { items }).then((r) => r.data.data)
 
+export const importDouyinAccountLink = (text: string) =>
+  apiClient.post<ApiResponse<Record<string, unknown>>>('/content-monitor/accounts/import-link', { text }).then((r) => r.data.data)
+
 // ── Model Providers ────────────────────────────────────────────────────────────
 export const listProviders = () =>
   apiClient.get<ApiResponse<ModelProvider[]>>('/providers').then((r) => r.data)

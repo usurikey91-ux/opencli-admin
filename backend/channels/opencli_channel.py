@@ -3,7 +3,6 @@
 import asyncio
 import csv
 import io
-import json
 import logging
 import os
 import shutil
@@ -13,6 +12,7 @@ from urllib.parse import urlparse
 import yaml
 
 from backend.channels.base import AbstractChannel, ChannelResult
+from backend.channels.opencli_output import parse_opencli_json
 from backend.channels.registry import register_channel
 
 logger = logging.getLogger(__name__)
@@ -59,11 +59,7 @@ def _resolve_bin(mode: str) -> str:  # noqa: ARG001 — mode unused, kept for ca
 
 
 def _parse_json(raw: str) -> list[dict]:
-    json_start = next((i for i, ch in enumerate(raw) if ch in ("{", "[")), None)
-    if json_start is None:
-        raise ValueError(f"No JSON found in output: {raw[:200]!r}")
-    data = json.loads(raw[json_start:])
-    return data if isinstance(data, list) else [data]
+    return parse_opencli_json(raw)
 
 
 def _parse_yaml(raw: str) -> list[dict]:

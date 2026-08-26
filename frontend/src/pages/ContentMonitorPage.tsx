@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Flame, ExternalLink, Radar, Upload } from 'lucide-react'
 
-import { importContentAccounts, listContentAccounts, listMonitoredWorks } from '../api/endpoints'
+import { importContentAccounts, importDouyinAccountLink, listContentAccounts, listMonitoredWorks } from '../api/endpoints'
 import type { MonitoredWork } from '../api/types'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
@@ -85,7 +85,9 @@ export default function ContentMonitorPage() {
     queryFn: () => listContentAccounts({ page: 1, limit: 100 }),
   })
   const importMutation = useMutation({
-    mutationFn: importContentAccounts,
+    mutationFn: (text: string) => /(?:^|\.)douyin\.com\//i.test(text)
+      ? importDouyinAccountLink(text)
+      : importContentAccounts(parseAccountImport(text)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['content-accounts'] })
       setShowImport(false)
@@ -152,7 +154,7 @@ export default function ContentMonitorPage() {
         )}
       </Card>
       {meta && meta.pages > 1 && <div className="mt-4"><Pagination page={meta.page} pages={meta.pages} total={meta.total} limit={meta.limit} onChange={setPage} /></div>}
-      {showImport && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6"><h2 className="text-lg font-semibold mb-2">导入对标账号</h2><p className="text-xs text-gray-500 mb-3">每行一个账号链接；也支持“平台,账号链接”或 JSON 数组。导入只保存账号身份，不会立即登录或采集。</p><textarea value={importText} onChange={(e) => setImportText(e.target.value)} className="w-full h-36 border rounded-lg p-3 text-sm dark:bg-gray-900 dark:border-gray-600" placeholder={'https://example.com/creator\n平台,https://example.com/another'} /><input ref={fileRef} type="file" accept=".txt,.csv,.json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) file.text().then(setImportText) }} /><div className="flex justify-between mt-4"><button onClick={() => fileRef.current?.click()} className="text-sm text-blue-600">选择文件</button><div className="flex gap-2"><button onClick={() => setShowImport(false)} className="px-3 py-2 text-sm border rounded-lg">取消</button><button disabled={!importText.trim() || importMutation.isPending} onClick={() => importMutation.mutate(parseAccountImport(importText))} className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-50">{importMutation.isPending ? '导入中…' : '开始导入'}</button></div></div></div></div>}
+      {showImport && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6"><h2 className="text-lg font-semibold mb-2">导入对标账号</h2><p className="text-xs text-gray-500 mb-3">可直接粘贴抖音作品的整段分享文案，系统会解析作品并自动识别作者。其他平台仍支持每行一个账号链接、“平台,链接”或 JSON 数组。</p><textarea value={importText} onChange={(e) => setImportText(e.target.value)} className="w-full h-36 border rounded-lg p-3 text-sm dark:bg-gray-900 dark:border-gray-600" placeholder={'9.76 03/26 复制整段抖音分享文案 https://v.douyin.com/.../\n\n或：平台,https://example.com/creator'} /><input ref={fileRef} type="file" accept=".txt,.csv,.json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) file.text().then(setImportText) }} />{importMutation.error && <p className="mt-2 text-xs text-red-600">{(importMutation.error as Error).message}</p>}<div className="flex justify-between mt-4"><button onClick={() => fileRef.current?.click()} className="text-sm text-blue-600">选择文件</button><div className="flex gap-2"><button onClick={() => setShowImport(false)} className="px-3 py-2 text-sm border rounded-lg">取消</button><button disabled={!importText.trim() || importMutation.isPending} onClick={() => importMutation.mutate(importText)} className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-50">{importMutation.isPending ? '正在解析…' : '开始导入'}</button></div></div></div></div>}
     </div>
   )
 }

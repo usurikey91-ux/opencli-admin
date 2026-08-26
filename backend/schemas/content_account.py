@@ -17,6 +17,10 @@ class ContentAccountImportRequest(BaseModel):
     items: list[ContentAccountImportItem] = Field(min_length=1, max_length=500)
 
 
+class ContentAccountLinkImportRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+
+
 class ContentAccountRead(UTCModel):
     id: str
     source_id: Optional[str] = None
