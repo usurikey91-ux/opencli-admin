@@ -43,8 +43,30 @@ async def test_bind_account_creates_one_four_hour_schedule(db_session):
     assert same_schedule.id == schedule.id
     assert schedule.cron_expression == "0 */4 * * *"
     assert account.collection_status == "ready"
-    assert account.collection_args["account_id"] == "sec-1"
+    assert account.collection_args["sec_uid"] == "sec-1"
     assert await db_session.scalar(select(func.count()).select_from(CronSchedule)) == 1
+
+
+@pytest.mark.asyncio
+async def test_douyin_bind_provisions_the_verified_default_source(db_session):
+    account, schedule, created = await service.bind_account(
+        db_session,
+        SunbirdAccountBindRequest(
+            platform="douyin",
+            external_account_id="sec-default-source",
+            display_name="creator",
+        ),
+    )
+
+    assert created is True
+    assert account.collection_enabled is True
+    assert account.collection_command == "user-videos"
+    assert account.collection_args["sec_uid"] == "sec-default-source"
+    assert schedule is not None
+    source = await db_session.get(DataSource, account.collection_source_id)
+    assert source.channel_config["site"] == "douyin"
+    assert source.channel_config["command"] == "user-videos"
+    assert schedule.parameters["sec_uid"] == "sec-default-source"
 
 
 @pytest.mark.asyncio

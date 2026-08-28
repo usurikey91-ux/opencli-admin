@@ -6,7 +6,7 @@
 
 `POST /api/v1/integrations/sunbird/accounts`
 
-请求至少包含 `platform`、稳定的 `external_account_id`（抖音优先使用 `sec_uid`）。如果同时提供 `source_id`，系统会将账号绑定到一个已有的 `opencli` 数据源，并幂等创建每 4 小时一次的巡检计划。
+请求至少包含 `platform`、稳定的 `external_account_id`（抖音优先使用 `sec_uid`）。抖音未指定 `source_id` 时，系统会自动创建或复用标准 OpenCLI 数据源：`douyin user-videos <sec_uid>`，并幂等创建每 4 小时一次的巡检计划；其他平台仍需显式指定采集源。
 
 绑定不会自动登录、上传 Cookie 或声称平台字段已验证；采集器实际拿到的字段仍以运行结果为准。
 

@@ -13,6 +13,19 @@ from backend.models.source import DataSource
 from backend.schemas.sunbird import SunbirdAccountBindRequest
 from backend.services import content_account_service, task_service
 
+DOUYIN_USER_VIDEOS_SOURCE_NAME = "Sunbird · Douyin public works"
+DOUYIN_USER_VIDEOS_CONFIG = {
+    "site": "douyin",
+    "command": "user-videos",
+    "format": "json",
+    "args": {
+        "limit": 20,
+        "with_comments": True,
+        "comment_limit": 10,
+    },
+    "content_monitoring": {},
+}
+
 
 def error_code(message: str | None) -> str:
     text = (message or "").lower()
@@ -29,16 +42,48 @@ def error_code(message: str | None) -> str:
     return "collection_failed"
 
 
+async def _get_or_create_douyin_source(session: AsyncSession) -> DataSource:
+    """Provision the one verified OpenCLI command needed by the MVP.
+
+    ``opencli douyin user-videos <sec_uid>`` was checked against the installed
+    CLI help. Its returned fields still need a real-account run before they are
+    treated as guaranteed platform data.
+    """
+    result = await session.execute(
+        select(DataSource).where(DataSource.name == DOUYIN_USER_VIDEOS_SOURCE_NAME)
+    )
+    source = result.scalar_one_or_none()
+    if source is None:
+        source = DataSource(
+            name=DOUYIN_USER_VIDEOS_SOURCE_NAME,
+            description="Sunbird benchmark account巡检 via OpenCLI douyin user-videos",
+            channel_type="opencli",
+            channel_config=DOUYIN_USER_VIDEOS_CONFIG.copy(),
+            tags=["sunbird", "benchmark", "douyin"],
+            enabled=True,
+        )
+        session.add(source)
+        await session.flush()
+    return source
+
+
 async def bind_account(
     session: AsyncSession, body: SunbirdAccountBindRequest
 ) -> tuple[ContentAccount, CronSchedule | None, bool]:
     items, created = await content_account_service.import_accounts(session, [body])
     account = items[0]
     schedule = None
-    if body.source_id:
-        source = await session.get(DataSource, body.source_id)
+    source_id = body.source_id
+    if not source_id and body.platform.lower() == "douyin":
+        source = await _get_or_create_douyin_source(session)
+    elif source_id:
+        source = await session.get(DataSource, source_id)
         if source is None:
             raise ValueError("Source not found")
+    else:
+        source = None
+
+    if source:
         if source.channel_type != "opencli":
             raise ValueError("Sunbird benchmark collection currently requires an opencli source")
         configured_command = source.channel_config.get("command")
@@ -49,7 +94,11 @@ async def bind_account(
             raise ValueError("command must match the bound OpenCLI source")
         account.collection_source_id = source.id
         account.collection_command = source_command
-        account.collection_args = {**body.args, "account_id": account.external_account_id}
+        account.collection_args = {
+            **(source.channel_config.get("args") or {}),
+            **body.args,
+            "sec_uid": account.external_account_id,
+        }
         account.collection_enabled = body.enabled
         account.collection_status = "ready" if body.enabled else "unconfigured"
         account.last_error_code = None
@@ -70,8 +119,8 @@ async def bind_account(
         )
         params = {
             "sunbird_account_id": account.id,
-            "account_id": account.external_account_id,
-            **body.args,
+            "sec_uid": account.external_account_id,
+            **(account.collection_args or {}),
         }
         if schedule is None:
             schedule = CronSchedule(
@@ -104,7 +153,7 @@ async def create_check_task(session: AsyncSession, account: ContentAccount):
     params = {
         **(account.collection_args or {}),
         "sunbird_account_id": account.id,
-        "account_id": account.external_account_id,
+        "sec_uid": account.external_account_id,
     }
     task = await task_service.create_task(
         session,
