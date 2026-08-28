@@ -8,7 +8,7 @@
 
 请求至少包含 `platform`、稳定的 `external_account_id`（抖音优先使用 `sec_uid`）。抖音未指定 `source_id` 时，系统会自动创建或复用标准 OpenCLI 数据源：`douyin user-videos <sec_uid>`，并幂等创建每 4 小时一次的巡检计划；其他平台仍需显式指定采集源。
 
-绑定不会自动登录、上传 Cookie 或声称平台字段已验证；采集器实际拿到的字段仍以运行结果为准。
+绑定不会自动登录、上传 Cookie 或声称平台字段已验证；采集器实际拿到的字段仍以运行结果为准。太阳鸟主界面已可直接添加监控账号并读取队列。
 
 ## 手动检查
 
@@ -29,4 +29,4 @@
 
 `unconfigured`、`ready`、`checking`、`ok`、`account_invalid`、`login_required`、`login_expired`、`missing_metric`、`collection_failed`、`published_at_missing`。
 
-当前错误码由采集错误文本做保守映射；真实平台返回字段验证后再细化。
+当前错误码由采集错误文本做保守映射；真实平台返回字段验证后再细化。远程 OpenCLI 调用可通过 `OPENCLI_ADMIN_API_TOKEN` 配置 Bearer Token。
