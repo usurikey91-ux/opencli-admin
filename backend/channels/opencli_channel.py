@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _DAEMON_PORT = 19825
 # Binary to invoke. Override with OPENCLI_BIN env var if needed.
 _OPENCLI_BIN = os.environ.get("OPENCLI_BIN", "opencli")
+_INTERNAL_PARAMETER_KEYS = {"chrome_endpoint", "sunbird_account_id"}
 
 # Cache: (bin, site, command) → frozenset of accepted --option names (excluding builtins)
 _help_cache: dict[tuple[str, str, str], frozenset[str]] = {}
@@ -322,7 +323,7 @@ class OpenCLIChannel(AbstractChannel):
         output_format = config.get("format", "json")
 
         chrome_endpoint: str | None = parameters.get("chrome_endpoint") or None
-        cli_params = {k: v for k, v in parameters.items() if k != "chrome_endpoint"}
+        cli_params = {k: v for k, v in parameters.items() if k not in _INTERNAL_PARAMETER_KEYS}
         raw_args: dict = {**config.get("args", {}), **cli_params}
         positional_args: list[str] = [str(v) for v in config.get("positional_args", [])]
 

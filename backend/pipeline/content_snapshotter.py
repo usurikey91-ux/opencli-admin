@@ -295,6 +295,16 @@ async def store_content_snapshots(
                     continue
 
         metrics = extract_metrics(raw)
+        if work.published_at is None:
+            account.collection_status = "published_at_missing"
+            account.last_error_code = "published_at_missing"
+            account.last_error_message = f"Work {work.external_work_id} has no usable published_at"
+        elif not any(value is not None for value in metrics.values()):
+            account.collection_status = "missing_metric"
+            account.last_error_code = "missing_metric"
+            account.last_error_message = (
+                f"Work {work.external_work_id} has no supported public metrics"
+            )
         snapshot = EngagementSnapshot(
             work_id=work.id,
             task_id=task_id,

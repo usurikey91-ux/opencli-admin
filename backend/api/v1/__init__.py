@@ -5,8 +5,8 @@ from fastapi import APIRouter
 from backend.api.v1 import (
     agents,
     browsers,
-    content_monitor,
     content_accounts,
+    content_monitor,
     dashboard,
     nodes,
     notifications,
@@ -14,6 +14,7 @@ from backend.api.v1 import (
     records,
     schedules,
     sources,
+    sunbird,
     system,
     tasks,
     webhooks,
@@ -26,6 +27,7 @@ v1_router.include_router(agents.router)
 v1_router.include_router(browsers.router)
 v1_router.include_router(content_monitor.router)
 v1_router.include_router(content_accounts.router)
+v1_router.include_router(sunbird.router)
 v1_router.include_router(nodes.router)
 v1_router.include_router(providers.router)
 v1_router.include_router(sources.router)

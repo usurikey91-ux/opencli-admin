@@ -45,6 +45,27 @@ class ContentAccount(TimestampMixin):
     profile_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     raw_profile: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
+    # Optional OpenCLI binding used by the Sunbird integration.  ``source_id``
+    # above remains the source that last produced data; this field is the
+    # source configured for future巡检.
+    collection_source_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("data_sources.id", ondelete="SET NULL"), nullable=True
+    )
+    collection_command: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    collection_args: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    collection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    collection_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="unconfigured"
+    )
+    last_collection_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     works: Mapped[list["ContentWork"]] = relationship(
         "ContentWork", back_populates="account", cascade="all, delete-orphan"
     )

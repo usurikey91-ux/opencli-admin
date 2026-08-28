@@ -124,6 +124,21 @@ async def run_collection_pipeline(
         enable_notifications=settings.notifications_enabled,
     )
 
+    # Sunbird binding status is operational state, not a detector result. Keep
+    # it in sync for both scheduled and manually triggered account checks.
+    sunbird_account_id = merged_params.get("sunbird_account_id")
+    if sunbird_account_id:
+        from backend.services.sunbird_integration_service import update_collection_result
+
+        async with AsyncSessionLocal() as session:
+            await update_collection_result(
+                session,
+                str(sunbird_account_id),
+                success=pipeline_result.success,
+                error=pipeline_result.error,
+            )
+            await session.commit()
+
     # ── Phase 4: persist final status ────────────────────────────────────────
     async with AsyncSessionLocal() as session:
         task = await session.get(CollectionTask, task_id)
