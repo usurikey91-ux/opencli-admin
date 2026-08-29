@@ -282,17 +282,18 @@ async def store_content_snapshots(
             )
             latest_snapshot_at = latest_snapshot.scalar_one_or_none()
             if latest_snapshot_at is not None:
-                if work.published_at is None:
-                    # The confirmed schedule is relative to publication time.
-                    # Until a fallback is agreed, do not invent one.
-                    continue
-                policy = evaluate_snapshot_policy(
-                    published_at=work.published_at,
-                    last_snapshot_at=latest_snapshot_at,
-                    now=observed_now,
-                )
-                if not policy.due:
-                    continue
+                if work.published_at is not None:
+                    policy = evaluate_snapshot_policy(
+                        published_at=work.published_at,
+                        last_snapshot_at=latest_snapshot_at,
+                        now=observed_now,
+                    )
+                    if not policy.due:
+                        continue
+                # When the platform omits publication time, keep every scheduled
+                # observation instead of inventing a timestamp or losing the
+                # snapshot. The work remains flagged as published_at_missing and
+                # final heat evaluation stays disabled until a real date appears.
 
         metrics = extract_metrics(raw)
         if work.published_at is None:

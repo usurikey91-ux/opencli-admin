@@ -30,7 +30,7 @@ def test_extract_metrics_preserves_missing_fields():
 
 
 @pytest.mark.asyncio
-async def test_work_without_publish_time_gets_only_first_snapshot(db_session):
+async def test_work_without_publish_time_keeps_scheduled_snapshots(db_session):
     from backend.models.source import DataSource
     from backend.models.task import CollectionTask
 
@@ -70,7 +70,7 @@ async def test_work_without_publish_time_gets_only_first_snapshot(db_session):
     assert second_records == []
     assert second_skipped == 1
     assert first_snapshots == 1
-    assert second_snapshots == 0
+    assert second_snapshots == 1
 
     record_count = await db_session.scalar(select(func.count()).select_from(CollectedRecord))
     account_count = await db_session.scalar(select(func.count()).select_from(ContentAccount))
@@ -84,9 +84,9 @@ async def test_work_without_publish_time_gets_only_first_snapshot(db_session):
     assert record_count == 1
     assert account_count == 1
     assert work_count == 1
-    assert len(snapshots) == 1
-    assert [snapshot.like_count for snapshot in snapshots] == [100]
-    assert [snapshot.comment_count for snapshot in snapshots] == [10]
+    assert len(snapshots) == 2
+    assert [snapshot.like_count for snapshot in snapshots] == [100, 250]
+    assert [snapshot.comment_count for snapshot in snapshots] == [10, 25]
 
 
 @pytest.mark.asyncio
