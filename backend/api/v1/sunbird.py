@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.database import get_db
 from backend.models.content_monitor import ContentWork
+from backend.models.source import DataSource
 from backend.schemas.common import ApiResponse, PaginationMeta
 from backend.schemas.sunbird import (
     SunbirdAccountBindRequest,
@@ -15,6 +16,33 @@ from backend.schemas.sunbird import (
 from backend.services import sunbird_integration_service as service
 
 router = APIRouter(prefix="/integrations/sunbird", tags=["sunbird-integration"])
+
+
+@router.get("/platforms", response_model=ApiResponse[list[dict]])
+async def list_sunbird_platforms(db: AsyncSession = Depends(get_db)) -> ApiResponse:
+    """List platform adapters exposed by configured OpenCLI sources."""
+    result = await db.execute(
+        select(DataSource)
+        .where(DataSource.channel_type == "opencli", DataSource.enabled.is_(True))
+        .order_by(DataSource.created_at.asc())
+    )
+    platforms: dict[str, dict] = {}
+    for source in result.scalars().all():
+        config = source.channel_config if isinstance(source.channel_config, dict) else {}
+        platform = str(config.get("site") or "").strip().lower()
+        if not platform:
+            continue
+        platforms.setdefault(
+            platform,
+            {
+                "id": platform,
+                "label": platform,
+                "source_id": source.id,
+                "command": config.get("command"),
+                "status": "configured",
+            },
+        )
+    return ApiResponse.ok(list(platforms.values()))
 
 
 @router.post("/accounts", response_model=ApiResponse[dict], status_code=201)

@@ -27,6 +27,28 @@ DOUYIN_USER_VIDEOS_CONFIG = {
 }
 
 
+async def _get_platform_source(session: AsyncSession, platform: str) -> DataSource | None:
+    """Find an enabled OpenCLI source registered for a platform.
+
+    The Douyin source remains auto-provisioned because it is the verified MVP adapter.
+    Other platforms are intentionally discovered from the user's configured sources,
+    keeping this integration independent from a fixed platform list.
+    """
+    if platform == "douyin":
+        return await _get_or_create_douyin_source(session)
+    result = await session.execute(
+        select(DataSource)
+        .where(DataSource.channel_type == "opencli", DataSource.enabled.is_(True))
+        .order_by(DataSource.created_at.asc())
+    )
+    for source in result.scalars().all():
+        config = source.channel_config if isinstance(source.channel_config, dict) else {}
+        site = str(config.get("site") or "").strip().lower()
+        if site == platform:
+            return source
+    return None
+
+
 def error_code(message: str | None) -> str:
     text = (message or "").lower()
     if "login required" in text or "请登录" in text or "未登录" in text:
@@ -74,8 +96,9 @@ async def bind_account(
     account = items[0]
     schedule = None
     source_id = body.source_id
-    if not source_id and body.platform.lower() == "douyin":
-        source = await _get_or_create_douyin_source(session)
+    platform = body.platform.lower()
+    if not source_id:
+        source = await _get_platform_source(session, platform)
     elif source_id:
         source = await session.get(DataSource, source_id)
         if source is None:
@@ -94,11 +117,14 @@ async def bind_account(
             raise ValueError("command must match the bound OpenCLI source")
         account.collection_source_id = source.id
         account.collection_command = source_command
-        account.collection_args = {
+        collection_args = {
             **(source.channel_config.get("args") or {}),
             **body.args,
-            "sec_uid": account.external_account_id,
+            "external_account_id": account.external_account_id,
         }
+        if platform == "douyin":
+            collection_args["sec_uid"] = account.external_account_id
+        account.collection_args = collection_args
         account.collection_enabled = body.enabled
         account.collection_status = "ready" if body.enabled else "unconfigured"
         account.last_error_code = None
@@ -119,9 +145,11 @@ async def bind_account(
         )
         params = {
             "sunbird_account_id": account.id,
-            "sec_uid": account.external_account_id,
+            "external_account_id": account.external_account_id,
             **(account.collection_args or {}),
         }
+        if platform == "douyin":
+            params["sec_uid"] = account.external_account_id
         if schedule is None:
             schedule = CronSchedule(
                 source_id=source.id,
@@ -153,8 +181,10 @@ async def create_check_task(session: AsyncSession, account: ContentAccount):
     params = {
         **(account.collection_args or {}),
         "sunbird_account_id": account.id,
-        "sec_uid": account.external_account_id,
+        "external_account_id": account.external_account_id,
     }
+    if account.platform.lower() == "douyin":
+        params["sec_uid"] = account.external_account_id
     task = await task_service.create_task(
         session,
         source_id=account.collection_source_id,
