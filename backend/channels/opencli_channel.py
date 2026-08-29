@@ -45,7 +45,7 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         text = stdout.decode(errors="replace")
         # Extract every --flag name; strip built-ins that aren't user-facing options
-        names = frozenset(re.findall(r"--([a-zA-Z][a-zA-Z0-9-]*)", text)) - {
+        names = frozenset(re.findall(r"--([a-zA-Z][a-zA-Z0-9_-]*)", text)) - {
             "format", "verbose", "help"
         }
     except Exception as exc:
@@ -323,9 +323,19 @@ class OpenCLIChannel(AbstractChannel):
         output_format = config.get("format", "json")
 
         chrome_endpoint: str | None = parameters.get("chrome_endpoint") or None
+        account_argument = str(config.get("account_argument") or "").strip()
         cli_params = {k: v for k, v in parameters.items() if k not in _INTERNAL_PARAMETER_KEYS}
+        account_value = None
+        if account_argument:
+            account_value = parameters.get(account_argument) or parameters.get("external_account_id")
+            # The bound account identity is represented by the configured positional
+            # argument, never duplicated as an unsupported named option.
+            cli_params.pop(account_argument, None)
+            cli_params.pop("external_account_id", None)
         raw_args: dict = {**config.get("args", {}), **cli_params}
         positional_args: list[str] = [str(v) for v in config.get("positional_args", [])]
+        if account_value is not None and str(account_value).strip():
+            positional_args.insert(0, str(account_value).strip())
 
         # Resolve which keys in raw_args are valid named --options for this command.
         # Any key not recognised by the binary is passed as a positional arg instead,

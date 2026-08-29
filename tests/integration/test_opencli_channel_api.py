@@ -184,6 +184,51 @@ async def test_collect_without_positional_args_backward_compat(
 
 
 @pytest.mark.asyncio
+async def test_collect_account_argument_is_positional_and_not_duplicated():
+    """Bound account identity is passed as user-videos' single positional arg."""
+    from backend.channels.opencli_channel import OpenCLIChannel
+
+    captured: list[list] = []
+
+    async def fake_subprocess(*cmd, **kwargs):
+        captured.append(list(cmd))
+        return _make_subprocess_mock()
+
+    cfg = {
+        "site": "douyin",
+        "command": "user-videos",
+        "account_argument": "sec_uid",
+        "args": {"limit": 20, "with_comments": True, "comment_limit": 10},
+        "format": "json",
+    }
+    with (
+        patch("asyncio.create_subprocess_exec", side_effect=fake_subprocess),
+        patch("backend.channels.opencli_channel._get_named_options", return_value=frozenset({"limit", "with_comments", "comment_limit"})),
+        patch("backend.browser_pool.get_pool", return_value=_pool_mock("bridge")),
+        patch("backend.config.get_settings", return_value=_settings_mock("local")),
+    ):
+        result = await OpenCLIChannel().collect(
+            cfg,
+            {
+                "sec_uid": "MS4wLjABAAAA-test",
+                "external_account_id": "MS4wLjABAAAA-test",
+            },
+        )
+
+    assert result.success
+    assert len(captured) == 1
+    cmd = captured[0]
+    site_idx = cmd.index("douyin")
+    assert cmd[site_idx : site_idx + 4] == [
+        "douyin",
+        "user-videos",
+        "MS4wLjABAAAA-test",
+        "--limit",
+    ]
+    assert cmd.count("MS4wLjABAAAA-test") == 1
+
+
+@pytest.mark.asyncio
 async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     client, opencli_source_payload
 ):

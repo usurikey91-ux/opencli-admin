@@ -17,11 +17,12 @@ DOUYIN_USER_VIDEOS_SOURCE_NAME = "Sunbird · Douyin public works"
 DOUYIN_USER_VIDEOS_CONFIG = {
     "site": "douyin",
     "command": "user-videos",
+    "account_argument": "sec_uid",
     "format": "json",
     "args": {
         "limit": 20,
-        "with_comments": True,
-        "comment_limit": 10,
+        # 评论接口更容易受平台登录态限制；热度 MVP 先保证作品和公开互动数据入库。
+        "with_comments": False,
     },
     "content_monitoring": {},
 }
@@ -86,6 +87,17 @@ async def _get_or_create_douyin_source(session: AsyncSession) -> DataSource:
         )
         session.add(source)
         await session.flush()
+    else:
+        # Upgrade sources created before ``account_argument`` was introduced so
+        # existing local installations do not duplicate the account ID as options.
+        config = dict(source.channel_config or {})
+        if config.get("account_argument") != "sec_uid":
+            config["account_argument"] = "sec_uid"
+        args = dict(config.get("args") or {})
+        if args.get("with_comments") is True:
+            args["with_comments"] = False
+        config["args"] = args
+        source.channel_config = config
     return source
 
 
