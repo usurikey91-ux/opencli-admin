@@ -12,6 +12,7 @@ from backend.models.content_monitor import ContentWork, DetectionResult, Engagem
 
 FINAL_WINDOW = timedelta(days=7)
 DETECTOR_VERSION = "v1-final-7d"
+OBSERVED_DETECTOR_VERSION = "v1-observed"
 
 _METRIC_ATTRIBUTES = {
     "view_count": "view_count",
@@ -145,5 +146,96 @@ async def evaluate_final_snapshot(
     detection.priority_analysis = decision.priority_analysis
     detection.status = decision.status
     detection.evidence = decision.evidence()
+    await session.flush()
+    return detection
+
+
+async def evaluate_observed_snapshot(
+    session: AsyncSession,
+    *,
+    snapshot_id: str,
+    metric_names: list[str] | None = None,
+) -> DetectionResult | None:
+    """Classify an early snapshot against the account's latest 20 prior works.
+
+    This is the fast path for the product goal: a newly discovered work can
+    enter the analysis queue as soon as its current public metrics are clearly
+    above the creator's normal level. The result is explicitly marked as an
+    early observation in ``evidence`` and is replaced by the final seven-day
+    evaluation when that window is available.
+    """
+    selected_metrics = metric_names or list(_METRIC_ATTRIBUTES)
+    if not selected_metrics or any(name not in _METRIC_ATTRIBUTES for name in selected_metrics):
+        raise ValueError(f"Unsupported content metrics: {selected_metrics}")
+
+    snapshot = await session.get(EngagementSnapshot, snapshot_id)
+    if snapshot is None:
+        return None
+    work = await session.get(ContentWork, snapshot.work_id)
+    if work is None or work.published_at is None:
+        return None
+
+    works_result = await session.execute(
+        select(ContentWork)
+        .where(
+            ContentWork.account_id == work.account_id,
+            ContentWork.id != work.id,
+        )
+        .order_by(ContentWork.published_at.desc().nullslast(), ContentWork.created_at.desc())
+        .limit(20)
+    )
+    baseline_works = list(works_result.scalars().all())
+    baseline_values: list[dict[str, int | None]] = []
+    for baseline_work in baseline_works:
+        latest_result = await session.execute(
+            select(EngagementSnapshot)
+            .where(EngagementSnapshot.work_id == baseline_work.id)
+            .order_by(EngagementSnapshot.collected_at.desc())
+            .limit(1)
+        )
+        baseline_values.append(
+            _snapshot_metrics(latest_result.scalar_one_or_none(), selected_metrics)
+        )
+
+    decision = evaluate_public_metrics(
+        metric_names=selected_metrics,
+        current_values=_snapshot_metrics(snapshot, selected_metrics),
+        baseline_values=baseline_values,
+        finalized=True,
+    )
+    existing_result = await session.execute(
+        select(DetectionResult).where(
+            DetectionResult.snapshot_id == snapshot.id,
+            DetectionResult.detector_version == OBSERVED_DETECTOR_VERSION,
+        )
+    )
+    detection = existing_result.scalar_one_or_none()
+    if detection is None:
+        detection = DetectionResult(
+            work_id=work.id,
+            snapshot_id=snapshot.id,
+            detector_version=OBSERVED_DETECTOR_VERSION,
+        )
+        session.add(detection)
+
+    detection.metric_name = decision.metric_name
+    detection.current_value = decision.current_value
+    detection.baseline_value = decision.baseline_value
+    detection.baseline_size = decision.baseline_size
+    detection.baseline_missing_count = decision.baseline_missing_count
+    detection.relative_multiple = decision.relative_multiple
+    detection.hot_multiple = decision.hot_multiple
+    detection.very_hot_multiple = decision.very_hot_multiple
+    detection.enters_analysis = decision.enters_analysis
+    detection.priority_analysis = decision.priority_analysis
+    detection.status = decision.status
+    evidence = decision.evidence()
+    evidence["finalized"] = False
+    evidence["observation_stage"] = "early_snapshot"
+    evidence["reasons"] = [
+        "基于当前公开数据快照的早期筛选，满 7 天后会用最终快照复核",
+        *evidence.get("reasons", []),
+    ]
+    detection.evidence = evidence
     await session.flush()
     return detection

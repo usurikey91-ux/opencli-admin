@@ -78,9 +78,9 @@ async def list_sunbird_accounts(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
-    from backend.services.content_account_service import list_accounts
-
-    accounts, total = await list_accounts(db, platform=platform, page=page, limit=limit)
+    accounts, total = await service.list_bound_accounts(
+        db, platform=platform, page=page, limit=limit
+    )
     return ApiResponse.ok(
         data=[SunbirdAccountRead.model_validate(account) for account in accounts],
         meta=PaginationMeta(total=total, page=page, limit=limit, pages=max(1, -(-total // limit))),

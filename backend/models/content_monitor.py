@@ -45,7 +45,7 @@ class ContentAccount(TimestampMixin):
     profile_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     raw_profile: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
-    # Optional OpenCLI binding used by the Sunbird integration.  ``source_id``
+    # Optional OpenCLI binding used by the content workbench integration. ``source_id``
     # above remains the source that last produced data; this field is the
     # source configured for future巡检.
     collection_source_id: Mapped[Optional[str]] = mapped_column(

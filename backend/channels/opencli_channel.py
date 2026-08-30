@@ -6,6 +6,7 @@ import io
 import logging
 import os
 import shutil
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -18,8 +19,17 @@ from backend.channels.registry import register_channel
 logger = logging.getLogger(__name__)
 
 _DAEMON_PORT = 19825
-# Binary to invoke. Override with OPENCLI_BIN env var if needed.
-_OPENCLI_BIN = os.environ.get("OPENCLI_BIN", "opencli")
+# Binary to invoke. Override with OPENCLI_BIN env var if needed. npm exposes
+# command shims as ``.cmd`` files on Windows, which asyncio does not resolve
+# when given the extensionless command name.
+def _default_opencli_bin() -> str:
+    if os.name != "nt":
+        return shutil.which("opencli") or "opencli"
+    npm_shim = Path(os.environ.get("APPDATA") or "") / "npm" / "opencli.cmd"
+    return shutil.which("opencli.cmd") or (str(npm_shim) if npm_shim.is_file() else "opencli.cmd")
+
+
+_OPENCLI_BIN = os.environ.get("OPENCLI_BIN") or _default_opencli_bin()
 _INTERNAL_PARAMETER_KEYS = {"chrome_endpoint", "sunbird_account_id"}
 
 # Cache: (bin, site, command) → frozenset of accepted --option names (excluding builtins)

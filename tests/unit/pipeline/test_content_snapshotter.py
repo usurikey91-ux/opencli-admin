@@ -90,6 +90,48 @@ async def test_work_without_publish_time_keeps_scheduled_snapshots(db_session):
 
 
 @pytest.mark.asyncio
+async def test_sec_uid_binds_public_rows_to_existing_benchmark_account(db_session):
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+
+    source = DataSource(
+        name="Douyin public works",
+        channel_type="opencli",
+        channel_config={
+            "site": "douyin",
+            "command": "user-videos",
+            "args": {"sec_uid": "sec-user-1"},
+        },
+    )
+    account = ContentAccount(
+        platform="douyin",
+        external_account_id="sec-user-1",
+        display_name="Benchmark creator",
+    )
+    db_session.add_all([source, account])
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    raw = {
+        "aweme_id": "aweme-1",
+        "sec_uid": "sec-user-1",
+        "title": "A public work",
+        "published_at": "2026-08-29T12:00:00+00:00",
+        "digg_count": 120,
+    }
+    await store_records(
+        db_session, task.id, source.id, normalize_items([raw], source.id)
+    )
+
+    work = (await db_session.execute(select(ContentWork))).scalar_one()
+    assert work.account_id == account.id
+    assert work.published_at is not None
+    assert account.display_name == "Benchmark creator"
+
+
+@pytest.mark.asyncio
 async def test_recent_work_respects_fixed_four_hour_snapshot_interval(
     db_session, monkeypatch
 ):

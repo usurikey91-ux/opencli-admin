@@ -50,7 +50,7 @@ function patch(filePath, search, replace, label) {
     return;
   }
   let content = fs.readFileSync(filePath, 'utf8');
-  if (content.includes(replace.slice(0, 40))) {
+  if (content.includes(replace)) {
     console.log('  [skip] ' + label + ' already patched');
     return;
   }
@@ -93,6 +93,66 @@ patch(
   'const __dirname = path.dirname(fileURLToPath(import.meta.url));',
   "const _dHost = process.env.OPENCLI_DAEMON_HOST;\n        if (_dHost && _dHost !== '127.0.0.1' && _dHost !== 'localhost') {\n            throw new Error('Remote Browser Bridge daemon at ' + _dHost + ' is not reachable. Ensure BROWSER_BRIDGE_ENABLED=true on the chrome container.');\n        }\n        const __dirname = path.dirname(fileURLToPath(import.meta.url));",
   'browser/bridge.js: skip local spawn for remote daemon'
+);
+
+// ── 4. douyin/user-videos.js: expose public publication and engagement data ─
+// The upstream public adapter currently drops create_time and most counters
+// before serialising rows.  The monitor cannot calculate an age-aware baseline
+// or seven-day observation window without this field, so keep the enrichment
+// as a small, repeatable post-install patch rather than forking opencli.
+patch(
+  path.join(pkgDir, 'clis', 'douyin', 'user-videos.js'),
+  "    columns: ['index', 'aweme_id', 'title', 'duration', 'digg_count', 'play_url', 'top_comments'],",
+  `    columns: [
+        'index', 'aweme_id', 'title', 'duration', 'published_at', 'url',
+        'digg_count', 'comment_count', 'collect_count', 'share_count',
+        'play_count', 'play_url', 'top_comments',
+    ],`,
+  'douyin/user-videos.js: publication and engagement fields'
+);
+patch(
+  path.join(pkgDir, 'clis', 'douyin', 'user-videos.js'),
+  `            const playUrl = video.video?.play_addr?.url_list?.[0] ?? '';
+            return {
+                index: index + 1,
+                aweme_id: video.aweme_id,
+                title: video.desc ?? '',
+                duration: Math.round((video.video?.duration ?? 0) / 1000),
+                digg_count: video.statistics?.digg_count ?? 0,
+                play_url: playUrl,
+                top_comments: video.top_comments ?? [],
+            };`,
+  `            const playUrl = video.video?.play_addr?.url_list?.[0] ?? '';
+            const createTime = Number(video.create_time ?? video.public_time ?? 0);
+            const statistics = video.statistics ?? {};
+            return {
+                index: index + 1,
+                aweme_id: video.aweme_id,
+                title: video.desc ?? '',
+                duration: Math.round((video.video?.duration ?? 0) / 1000),
+                published_at: createTime > 0 ? new Date(createTime * 1000).toISOString() : '',
+                url: video.aweme_id ? 'https://www.douyin.com/video/' + video.aweme_id : '',
+                digg_count: statistics.digg_count ?? 0,
+                comment_count: statistics.comment_count ?? 0,
+                collect_count: statistics.collect_count ?? statistics.collects_count ?? 0,
+                share_count: statistics.share_count ?? 0,
+                play_count: statistics.play_count ?? 0,
+                play_url: playUrl,
+                top_comments: video.top_comments ?? [],
+            };`,
+  'douyin/user-videos.js: map publication and engagement fields'
+);
+patch(
+  path.join(pkgDir, 'clis', 'douyin', 'user-videos.js'),
+  "        'index', 'aweme_id', 'title', 'duration', 'published_at',\n        'digg_count',",
+  "        'index', 'aweme_id', 'title', 'duration', 'published_at', 'url',\n        'digg_count',",
+  'douyin/user-videos.js: stable work URL column'
+);
+patch(
+  path.join(pkgDir, 'clis', 'douyin', 'user-videos.js'),
+  "                published_at: createTime > 0 ? new Date(createTime * 1000).toISOString() : '',\n                digg_count:",
+  "                published_at: createTime > 0 ? new Date(createTime * 1000).toISOString() : '',\n                url: video.aweme_id ? 'https://www.douyin.com/video/' + video.aweme_id : '',\n                digg_count:",
+  'douyin/user-videos.js: stable work URL value'
 );
 
 console.log('Done.');

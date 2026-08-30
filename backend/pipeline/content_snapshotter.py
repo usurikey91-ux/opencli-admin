@@ -13,7 +13,15 @@ from backend.models.source import DataSource
 from backend.monitoring_policy import evaluate_snapshot_policy
 
 
-_ACCOUNT_ID_KEYS = ("author_id", "user_id", "uid", "channel_id", "account_id", "owner_id")
+_ACCOUNT_ID_KEYS = (
+    "author_id",
+    "user_id",
+    "uid",
+    "sec_uid",
+    "channel_id",
+    "account_id",
+    "owner_id",
+)
 _ACCOUNT_HANDLE_KEYS = ("author", "author_name", "username", "user_name", "channel", "creator")
 _WORK_ID_KEYS = ("work_id", "post_id", "note_id", "video_id", "aweme_id", "bvid", "id")
 _PROFILE_URL_KEYS = ("profile_url", "author_url", "user_url", "channel_url")
@@ -113,7 +121,10 @@ def _source_platform(source: DataSource) -> str:
 
 
 def _account_identity(
-    raw: dict[str, Any], normalized: dict[str, Any], source: DataSource
+    raw: dict[str, Any],
+    normalized: dict[str, Any],
+    source: DataSource,
+    task_parameters: dict[str, Any] | None = None,
 ) -> tuple[str, str | None, str | None, str | None]:
     author_data = raw.get("author") if isinstance(raw.get("author"), dict) else {}
     external_id = _mapping_value(raw, _ACCOUNT_ID_KEYS) or _mapping_value(
@@ -130,16 +141,29 @@ def _account_identity(
 
     config = source.channel_config if isinstance(source.channel_config, dict) else {}
     config_args = config.get("args") if isinstance(config.get("args"), dict) else {}
+    task_parameters = task_parameters if isinstance(task_parameters, dict) else {}
     configured_account = next(
         (
-            config_args.get(key) or config.get(key)
-            for key in ("account_id", "user_id", "uid", "username", "user", "channel")
-            if config_args.get(key) or config.get(key)
+            task_parameters.get(key) or config_args.get(key) or config.get(key)
+            for key in (
+                "account_id",
+                "external_account_id",
+                "user_id",
+                "uid",
+                "sec_uid",
+                "username",
+                "user",
+                "channel",
+            )
+            if task_parameters.get(key) or config_args.get(key) or config.get(key)
         ),
         None,
     )
     external_id = external_id or configured_account or handle or source.id
-    display_name = str(handle) if handle not in (None, "") else source.name
+    # A source name describes the collector, not the creator. Keep it out of
+    # the account identity so a collection run cannot overwrite a user-facing
+    # account label when the adapter omits author metadata.
+    display_name = str(handle) if handle not in (None, "") else None
     return (
         str(external_id),
         str(handle) if handle else None,
@@ -176,6 +200,15 @@ async def store_content_snapshots(
     if source is None:
         return 0
 
+    # A shared source serves multiple benchmark accounts. The task carries the
+    # account identity, while the public adapter's row may intentionally omit
+    # author fields. Read it once so rows are attached to the account that
+    # triggered this collection instead of falling back to the source itself.
+    from backend.models.task import CollectionTask
+
+    task = await session.get(CollectionTask, task_id)
+    task_parameters = task.parameters if task and isinstance(task.parameters, dict) else {}
+
     platform = _source_platform(source)
     account_cache: dict[str, ContentAccount] = {}
     work_cache: dict[tuple[str, str], ContentWork] = {}
@@ -186,7 +219,7 @@ async def store_content_snapshots(
 
     for raw, normalized, content_hash in normalized_triples:
         account_external_id, handle, display_name, profile_url = _account_identity(
-            raw, normalized, source
+            raw, normalized, source, task_parameters
         )
         account = account_cache.get(account_external_id)
         if account is None:
@@ -319,11 +352,20 @@ async def store_content_snapshots(
         stored += 1
 
     await session.flush()
-    from backend.services.content_detection import configured_metrics, evaluate_final_snapshot
+    from backend.services.content_detection import (
+        configured_metrics,
+        evaluate_final_snapshot,
+        evaluate_observed_snapshot,
+    )
 
     metric_names = configured_metrics(source.channel_config)
     if metric_names:
         for snapshot in new_snapshots:
+            await evaluate_observed_snapshot(
+                session,
+                snapshot_id=snapshot.id,
+                metric_names=metric_names,
+            )
             await evaluate_final_snapshot(
                 session,
                 snapshot_id=snapshot.id,

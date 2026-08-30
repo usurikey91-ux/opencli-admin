@@ -1,9 +1,9 @@
-"""Small, replaceable contract between Sunbird and OpenCLI Admin."""
+"""Small, replaceable contract between the content workbench and OpenCLI Admin."""
 
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,7 +13,8 @@ from backend.models.source import DataSource
 from backend.schemas.sunbird import SunbirdAccountBindRequest
 from backend.services import content_account_service, task_service
 
-DOUYIN_USER_VIDEOS_SOURCE_NAME = "Sunbird · Douyin public works"
+DOUYIN_USER_VIDEOS_SOURCE_NAME = "Content Workbench · Douyin public works"
+LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME = "Sunbird · Douyin public works"
 DOUYIN_USER_VIDEOS_CONFIG = {
     "site": "douyin",
     "command": "user-videos",
@@ -73,21 +74,31 @@ async def _get_or_create_douyin_source(session: AsyncSession) -> DataSource:
     treated as guaranteed platform data.
     """
     result = await session.execute(
-        select(DataSource).where(DataSource.name == DOUYIN_USER_VIDEOS_SOURCE_NAME)
+        select(DataSource).where(
+            DataSource.name.in_([
+                DOUYIN_USER_VIDEOS_SOURCE_NAME,
+                LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME,
+            ])
+        )
     )
-    source = result.scalar_one_or_none()
+    source = result.scalars().first()
     if source is None:
         source = DataSource(
             name=DOUYIN_USER_VIDEOS_SOURCE_NAME,
-            description="Sunbird benchmark account巡检 via OpenCLI douyin user-videos",
+            description="Content workbench benchmark collection via OpenCLI douyin user-videos",
             channel_type="opencli",
             channel_config=DOUYIN_USER_VIDEOS_CONFIG.copy(),
-            tags=["sunbird", "benchmark", "douyin"],
+            tags=["content-workbench", "benchmark", "douyin"],
             enabled=True,
         )
         session.add(source)
         await session.flush()
     else:
+        # Upgrade legacy source branding and configuration in place so existing
+        # installations do not create a duplicate source.
+        source.name = DOUYIN_USER_VIDEOS_SOURCE_NAME
+        source.description = "Content workbench benchmark collection via OpenCLI douyin user-videos"
+        source.tags = ["content-workbench", "benchmark", "douyin"]
         # Upgrade sources created before ``account_argument`` was introduced so
         # existing local installations do not duplicate the account ID as options.
         config = dict(source.channel_config or {})
@@ -106,6 +117,12 @@ async def bind_account(
 ) -> tuple[ContentAccount, CronSchedule | None, bool]:
     items, created = await content_account_service.import_accounts(session, [body])
     account = items[0]
+    if not account.display_name or account.display_name in {
+        LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME,
+        DOUYIN_USER_VIDEOS_SOURCE_NAME,
+    }:
+        platform_label = "抖音" if account.platform.lower() == "douyin" else account.platform
+        account.display_name = f"{platform_label} · {account.external_account_id[-8:]}"
     schedule = None
     source_id = body.source_id
     platform = body.platform.lower()
@@ -120,13 +137,20 @@ async def bind_account(
 
     if source:
         if source.channel_type != "opencli":
-            raise ValueError("Sunbird benchmark collection currently requires an opencli source")
+            raise ValueError("Benchmark collection currently requires an OpenCLI source")
         configured_command = source.channel_config.get("command")
         source_command = body.command or configured_command
         if not source_command:
             raise ValueError("command is required when source_id is provided")
         if configured_command and body.command and body.command != configured_command:
             raise ValueError("command must match the bound OpenCLI source")
+        binding_changed = bool(created) or any(
+            (
+                account.collection_source_id != source.id,
+                account.collection_command != source_command,
+                account.collection_enabled != body.enabled,
+            )
+        )
         account.collection_source_id = source.id
         account.collection_command = source_command
         collection_args = {
@@ -138,9 +162,14 @@ async def bind_account(
             collection_args["sec_uid"] = account.external_account_id
         account.collection_args = collection_args
         account.collection_enabled = body.enabled
-        account.collection_status = "ready" if body.enabled else "unconfigured"
-        account.last_error_code = None
-        account.last_error_message = None
+        if not body.enabled:
+            account.collection_status = "unconfigured"
+            account.last_error_code = None
+            account.last_error_message = None
+        elif binding_changed or account.collection_status == "unconfigured":
+            account.collection_status = "ready"
+            account.last_error_code = None
+            account.last_error_message = None
 
         # JSON path is supported by SQLite and PostgreSQL; this keeps binding idempotent.
         result = await session.execute(
@@ -165,7 +194,7 @@ async def bind_account(
         if schedule is None:
             schedule = CronSchedule(
                 source_id=source.id,
-                name=f"Sunbird benchmark {account.display_name or account.external_account_id}",
+                name=f"Content benchmark {account.display_name or account.external_account_id}",
                 cron_expression="0 */4 * * *",
                 timezone="UTC",
                 parameters=params,
@@ -173,6 +202,7 @@ async def bind_account(
             )
             session.add(schedule)
         else:
+            schedule.name = f"Content benchmark {account.display_name or account.external_account_id}"
             schedule.enabled = body.enabled
             schedule.parameters = params
         await session.flush()
@@ -181,6 +211,28 @@ async def bind_account(
 
 async def get_account(session: AsyncSession, account_id: str) -> ContentAccount | None:
     return await session.get(ContentAccount, account_id)
+
+
+async def list_bound_accounts(
+    session: AsyncSession,
+    *,
+    platform: str | None = None,
+    page: int = 1,
+    limit: int = 50,
+) -> tuple[list[ContentAccount], int]:
+    """List only accounts that are actually bound to a collection source."""
+    filters = [ContentAccount.collection_source_id.is_not(None)]
+    if platform:
+        filters.append(ContentAccount.platform == platform.lower())
+    query = (
+        select(ContentAccount)
+        .where(*filters)
+        .order_by(ContentAccount.updated_at.desc())
+    )
+    count_query = select(func.count()).select_from(ContentAccount).where(*filters)
+    total = (await session.execute(count_query)).scalar_one()
+    rows = await session.execute(query.offset((page - 1) * limit).limit(limit))
+    return list(rows.scalars().all()), total
 
 
 async def create_check_task(session: AsyncSession, account: ContentAccount):
@@ -232,7 +284,28 @@ async def update_collection_result(
 def work_contract(work: ContentWork) -> dict[str, Any]:
     snapshots = sorted(work.snapshots, key=lambda item: item.collected_at)
     latest = snapshots[-1] if snapshots else None
-    detection = max(work.detections, key=lambda item: item.evaluated_at, default=None)
+    # Prefer a valid seven-day decision when one exists. If the final pass is
+    # still insufficient (for example, a historical work lacks a final
+    # snapshot), keep an earlier hot candidate visible instead of letting an
+    # incomplete re-check erase the analysis queue entry.
+    final_detections = [
+        item for item in work.detections if item.detector_version == "v1-final-7d"
+    ]
+    final_detection = max(final_detections, key=lambda item: item.evaluated_at, default=None)
+    if final_detection and final_detection.status not in {"insufficient_data", "pending_final_window"}:
+        detection = final_detection
+    else:
+        early_candidates = [
+            item
+            for item in work.detections
+            if item.detector_version == "v1-observed"
+            and item.status in {"hot", "very_hot"}
+        ]
+        detection = max(
+            early_candidates or work.detections,
+            key=lambda item: item.evaluated_at,
+            default=None,
+        )
     return {
         "account": {
             "id": work.account.id,

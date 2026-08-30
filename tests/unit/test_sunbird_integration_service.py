@@ -80,6 +80,51 @@ async def test_unconfigured_account_cannot_start_check(db_session):
 
 
 @pytest.mark.asyncio
+async def test_list_bound_accounts_hides_unconfigured_accounts(db_session):
+    bound, _, _ = await service.bind_account(
+        db_session,
+        SunbirdAccountBindRequest(
+            platform="douyin",
+            external_account_id="sec-bound",
+            display_name="bound creator",
+        ),
+    )
+    db_session.add(
+        ContentAccount(
+            platform="douyin",
+            external_account_id="sec-unconfigured",
+            display_name="unconfigured creator",
+            raw_profile={},
+        )
+    )
+    await db_session.flush()
+
+    accounts, total = await service.list_bound_accounts(db_session)
+
+    assert total == 1
+    assert [account.id for account in accounts] == [bound.id]
+
+
+@pytest.mark.asyncio
+async def test_idempotent_rebind_preserves_successful_collection_status(db_session):
+    body = SunbirdAccountBindRequest(
+        platform="douyin",
+        external_account_id="sec-successful",
+        display_name="successful creator",
+    )
+    account, _, _ = await service.bind_account(db_session, body)
+    account.collection_status = "ok"
+    account.last_success_at = datetime.now(UTC)
+    await db_session.flush()
+
+    rebound, _, created = await service.bind_account(db_session, body)
+
+    assert created is False
+    assert rebound.collection_status == "ok"
+    assert rebound.last_success_at is not None
+
+
+@pytest.mark.asyncio
 async def test_work_contract_exposes_public_evidence_for_sunbird(db_session):
     account = ContentAccount(platform="douyin", external_account_id="sec-3", raw_profile={})
     db_session.add(account)
