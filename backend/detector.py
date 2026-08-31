@@ -8,7 +8,7 @@ from typing import Iterable
 
 
 BASELINE_WINDOW = 20
-HOT_MULTIPLE = 2.0
+HOT_MULTIPLE = 3.0
 VERY_HOT_MULTIPLE = 5.0
 
 

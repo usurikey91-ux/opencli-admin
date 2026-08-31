@@ -164,7 +164,7 @@ class DetectionResult(TimestampMixin):
     baseline_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     baseline_missing_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     relative_multiple: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    hot_multiple: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
+    hot_multiple: Mapped[float] = mapped_column(Float, nullable=False, default=3.0)
     very_hot_multiple: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)
     enters_analysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     priority_analysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

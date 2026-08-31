@@ -95,7 +95,7 @@ export default function ContentMonitorPage() {
     },
   })
 
-  if (isLoading) return <><PageHeader title="作品观察" description="只展示已采集作品及其最终热度判定" /><Card padding={false}><TableSkeleton rows={8} /></Card></>
+  if (isLoading) return <><PageHeader title="作品观察" description="只展示已采集作品及其最终热度判定（火 ≥ 3×，特别火 ≥ 5×）" /><Card padding={false}><TableSkeleton rows={8} /></Card></>
   if (error) return <ErrorAlert error={error as Error} onRetry={refetch} />
 
   const works = data?.data ?? []
@@ -104,7 +104,7 @@ export default function ContentMonitorPage() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <PageHeader title="作品观察" description="只展示已采集作品及其最终热度判定" />
+        <PageHeader title="作品观察" description="只展示已采集作品及其最终热度判定（火 ≥ 3×，特别火 ≥ 5×）" />
         <button onClick={() => setShowImport(true)} className="mt-1 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"><Upload size={15} />导入对标账号</button>
       </div>
       <Card>

@@ -220,8 +220,12 @@ async def list_bound_accounts(
     page: int = 1,
     limit: int = 50,
 ) -> tuple[list[ContentAccount], int]:
-    """List only accounts that are actually bound to a collection source."""
-    filters = [ContentAccount.collection_source_id.is_not(None)]
+    """List benchmark account identities, including unsupported/unconfigured ones.
+
+    An account without a matching source must remain visible so the UI can show
+    an explicit ``unconfigured`` state instead of silently hiding the account.
+    """
+    filters = []
     if platform:
         filters.append(ContentAccount.platform == platform.lower())
     query = (

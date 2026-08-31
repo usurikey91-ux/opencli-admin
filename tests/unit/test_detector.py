@@ -12,30 +12,30 @@ from backend.detector import (
 BASELINE = [1_000] * BASELINE_WINDOW
 
 
-def test_below_two_times_account_median_stays_observing():
+def test_below_three_times_account_median_stays_observing():
     decision = evaluate_public_metric(
         metric_name="like_count",
-        current_value=1_999,
+        current_value=2_999,
         baseline_values=BASELINE,
         finalized=True,
     )
 
     assert decision.status == "observing"
     assert decision.baseline_value == 1_000
-    assert decision.relative_multiple == 1.999
+    assert decision.relative_multiple == 2.999
     assert decision.enters_analysis is False
 
 
-def test_two_times_account_median_enters_normal_analysis_queue():
+def test_three_times_account_median_enters_normal_analysis_queue():
     decision = evaluate_public_metric(
         metric_name="like_count",
-        current_value=2_000,
+        current_value=3_000,
         baseline_values=BASELINE,
         finalized=True,
     )
 
     assert decision.status == "hot"
-    assert decision.hot_multiple == HOT_MULTIPLE == 2.0
+    assert decision.hot_multiple == HOT_MULTIPLE == 3.0
     assert decision.enters_analysis is True
     assert decision.priority_analysis is False
 
