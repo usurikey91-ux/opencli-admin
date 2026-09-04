@@ -74,7 +74,10 @@ class ClaudeProcessor(AbstractProcessor):
                 logger.error("claude error [%d/%d] | %s", i + 1, len(records), exc)
                 enrichments.append({"error": str(exc)})
 
-        logger.info("claude processor done | success=%d errors=%d",
-                    sum(1 for e in enrichments if "error" not in e),
-                    sum(1 for e in enrichments if "error" in e))
-        return ProcessingResult(success=True, enrichments=enrichments)
+        errors = sum(1 for e in enrichments if "error" in e)
+        logger.info("claude processor done | success=%d errors=%d", len(enrichments) - errors, errors)
+        return ProcessingResult(
+            success=errors == 0,
+            enrichments=enrichments,
+            error=f"{errors}/{len(records)} requests failed" if errors else None,
+        )

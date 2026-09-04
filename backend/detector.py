@@ -8,6 +8,7 @@ from typing import Iterable
 
 
 BASELINE_WINDOW = 20
+MINIMUM_BASELINE = 5
 HOT_MULTIPLE = 3.0
 VERY_HOT_MULTIPLE = 5.0
 
@@ -48,8 +49,10 @@ def _parse_metric(value: int | None) -> int | None:
     return parsed if parsed >= 0 else None
 
 
-def _latest_window(values: Iterable[int | None]) -> tuple[list[int], int, int]:
-    raw_window = list(islice(values, BASELINE_WINDOW))
+def _latest_window(
+    values: Iterable[int | None], baseline_window: int = BASELINE_WINDOW
+) -> tuple[list[int], int, int]:
+    raw_window = list(islice(values, baseline_window))
     parsed_values: list[int] = []
     for value in raw_window:
         parsed = _parse_metric(value)
@@ -64,6 +67,10 @@ def evaluate_public_metric(
     current_value: int | None,
     baseline_values: Iterable[int | None],
     finalized: bool,
+    baseline_window: int = BASELINE_WINDOW,
+    minimum_baseline: int = MINIMUM_BASELINE,
+    hot_multiple: float = HOT_MULTIPLE,
+    very_hot_multiple: float = VERY_HOT_MULTIPLE,
 ) -> DetectionDecision:
     """Compare a work with its account's latest 20 valid prior works.
 
@@ -74,7 +81,7 @@ def evaluate_public_metric(
     incomplete; later works never substitute for it.
     """
     baseline_sample, baseline_size, baseline_missing_count = _latest_window(
-        baseline_values
+        baseline_values, baseline_window
     )
     parsed_current_value = _parse_metric(current_value)
 
@@ -88,8 +95,8 @@ def evaluate_public_metric(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=("尚未到达发布后7天的最终观察窗口",),
@@ -105,14 +112,14 @@ def evaluate_public_metric(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=("当前作品缺少已选定的公开指标",),
         )
 
-    if baseline_size < BASELINE_WINDOW:
+    if baseline_size < minimum_baseline:
         return DetectionDecision(
             status="insufficient_data",
             metric_name=metric_name,
@@ -122,11 +129,11 @@ def evaluate_public_metric(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
-            reasons=(f"只取到最近 {baseline_size} 条作品，需要完整的 20 条",),
+            reasons=(f"只取到 {baseline_size} 条历史作品，至少需要 {minimum_baseline} 条",),
         )
 
     if baseline_missing_count:
@@ -139,12 +146,12 @@ def evaluate_public_metric(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=(
-                f"最近 20 条作品中有 {baseline_missing_count} 条缺少主公开指标，"
+                f"最近 {baseline_size} 条作品中有 {baseline_missing_count} 条缺少主公开指标，"
                 "不使用更早作品补位",
             ),
         )
@@ -160,19 +167,19 @@ def evaluate_public_metric(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=("账号日常中位数为零，无法计算相对倍数",),
         )
 
     relative_multiple = parsed_current_value / baseline
-    if relative_multiple >= VERY_HOT_MULTIPLE:
+    if relative_multiple >= very_hot_multiple:
         status = "very_hot"
         enters_analysis = True
         priority_analysis = True
-    elif relative_multiple >= HOT_MULTIPLE:
+    elif relative_multiple >= hot_multiple:
         status = "hot"
         enters_analysis = True
         priority_analysis = False
@@ -190,14 +197,14 @@ def evaluate_public_metric(
         baseline_size=baseline_size,
         baseline_missing_count=baseline_missing_count,
         relative_multiple=relative_multiple,
-        hot_multiple=HOT_MULTIPLE,
-        very_hot_multiple=VERY_HOT_MULTIPLE,
+        hot_multiple=hot_multiple,
+        very_hot_multiple=very_hot_multiple,
         enters_analysis=enters_analysis,
         priority_analysis=priority_analysis,
         reasons=(
             f"{metric_name}={parsed_current_value}，账号日常中位数={baseline:g}",
-            f"相对倍数={relative_multiple:.2f}，火={HOT_MULTIPLE:g}倍，"
-            f"特别火={VERY_HOT_MULTIPLE:g}倍",
+            f"相对倍数={relative_multiple:.2f}，火={hot_multiple:g}倍，"
+            f"特别火={very_hot_multiple:g}倍",
         ),
     )
 
@@ -225,6 +232,10 @@ def evaluate_public_metrics(
     current_values: dict[str, int | None],
     baseline_values: Iterable[dict[str, int | None]],
     finalized: bool,
+    baseline_window: int = BASELINE_WINDOW,
+    minimum_baseline: int = MINIMUM_BASELINE,
+    hot_multiple: float = HOT_MULTIPLE,
+    very_hot_multiple: float = VERY_HOT_MULTIPLE,
 ) -> DetectionDecision:
     """Classify a work using whatever public metrics are actually available.
 
@@ -236,7 +247,7 @@ def evaluate_public_metrics(
     most useful public interaction signals when views are unavailable.
     """
     names = tuple(dict.fromkeys(metric_names))
-    raw_baseline = list(islice(baseline_values, BASELINE_WINDOW))
+    raw_baseline = list(islice(baseline_values, baseline_window))
     current_metrics = _parse_metric_mapping(current_values, names)
     baseline_size = len(raw_baseline)
     parsed_baselines = [_parse_metric_mapping(row, names) for row in raw_baseline]
@@ -252,8 +263,8 @@ def evaluate_public_metrics(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=("尚未到达发布后7天的最终观察窗口",),
@@ -261,7 +272,7 @@ def evaluate_public_metrics(
             component_multiples={},
         )
 
-    if baseline_size < BASELINE_WINDOW:
+    if baseline_size < minimum_baseline:
         return DetectionDecision(
             status="insufficient_data",
             metric_name="public_composite",
@@ -271,11 +282,11 @@ def evaluate_public_metrics(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
-            reasons=(f"只取到最近 {baseline_size} 条作品，需要完整的 20 条",),
+            reasons=(f"只取到 {baseline_size} 条历史作品，至少需要 {minimum_baseline} 条",),
             metric_values=current_metrics,
             component_multiples={},
         )
@@ -290,8 +301,8 @@ def evaluate_public_metrics(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=("当前作品没有可用的公开互动指标",),
@@ -321,8 +332,8 @@ def evaluate_public_metrics(
             baseline_size=baseline_size,
             baseline_missing_count=baseline_missing_count,
             relative_multiple=None,
-            hot_multiple=HOT_MULTIPLE,
-            very_hot_multiple=VERY_HOT_MULTIPLE,
+            hot_multiple=hot_multiple,
+            very_hot_multiple=very_hot_multiple,
             enters_analysis=False,
             priority_analysis=False,
             reasons=("公开指标存在，但没有足够的历史样本形成可比较基线",),
@@ -339,9 +350,9 @@ def evaluate_public_metrics(
         / total_weight
     )
     representative = max(component_multiples, key=component_multiples.get)
-    if relative_multiple >= VERY_HOT_MULTIPLE:
+    if relative_multiple >= very_hot_multiple:
         status, enters_analysis, priority_analysis = "very_hot", True, True
-    elif relative_multiple >= HOT_MULTIPLE:
+    elif relative_multiple >= hot_multiple:
         status, enters_analysis, priority_analysis = "hot", True, False
     else:
         status, enters_analysis, priority_analysis = "observing", False, False
@@ -355,13 +366,13 @@ def evaluate_public_metrics(
         baseline_size=baseline_size,
         baseline_missing_count=baseline_missing_count,
         relative_multiple=relative_multiple,
-        hot_multiple=HOT_MULTIPLE,
-        very_hot_multiple=VERY_HOT_MULTIPLE,
+        hot_multiple=hot_multiple,
+        very_hot_multiple=very_hot_multiple,
         enters_analysis=enters_analysis,
         priority_analysis=priority_analysis,
         reasons=(
             f"综合 {len(component_multiples)} 个可用公开指标，代表指标={representative}",
-            f"综合相对倍数={relative_multiple:.2f}，火={HOT_MULTIPLE:g}倍，特别火={VERY_HOT_MULTIPLE:g}倍",
+            f"综合相对倍数={relative_multiple:.2f}，火={hot_multiple:g}倍，特别火={very_hot_multiple:g}倍",
         ),
         metric_values=current_metrics,
         component_multiples=component_multiples,

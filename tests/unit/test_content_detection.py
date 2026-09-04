@@ -67,8 +67,8 @@ async def test_early_snapshot_enters_queue_after_twenty_prior_works(db_session):
         work_id=current_work.id,
         task_id=task.id,
         collected_at=datetime(2026, 8, 20, 1, tzinfo=timezone.utc),
-        like_count=250,
-        metrics={"like_count": 250},
+        like_count=300,
+        metrics={"like_count": 300},
         raw_data={},
     )
     db_session.add(snapshot)

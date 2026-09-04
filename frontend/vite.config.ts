@@ -10,7 +10,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 8030,
+    // Keep the documented default while allowing local runs to choose a port
+    // (for example FRONTEND_PORT=5174) without relying on CLI-only overrides.
+    port: Number(process.env.FRONTEND_PORT ?? 8030),
     // Allow requests from Docker containers (host.docker.internal) and any LAN IP
     // Dev-only: production uses nginx which doesn't have this restriction
     allowedHosts: true,

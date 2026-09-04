@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -215,7 +215,7 @@ export default function RecordsPage() {
                 </td>
               </tr>
             ) : records.map((r) => (
-              <>
+              <Fragment key={r.id}>
                 <tr
                   key={r.id}
                   onClick={() => toggleExpand(r.id)}
@@ -289,7 +289,7 @@ export default function RecordsPage() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

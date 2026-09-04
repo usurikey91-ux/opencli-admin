@@ -115,6 +115,21 @@ def _parse_published_at(value: Any) -> datetime | None:
     return parsed
 
 
+def _xiaohongshu_published_at(work_id: str) -> datetime | None:
+    """Decode the creation time stored in a Xiaohongshu 24-char note id."""
+    value = str(work_id or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{24}", value):
+        return None
+    try:
+        parsed = datetime.fromtimestamp(int(value[:8], 16), tz=timezone.utc)
+    except (ValueError, OSError, OverflowError):
+        return None
+    now = _utcnow()
+    if parsed.year < 2013 or parsed > now:
+        return None
+    return parsed
+
+
 def _source_platform(source: DataSource) -> str:
     site = source.channel_config.get("site") if isinstance(source.channel_config, dict) else None
     return str(site or source.channel_type or "unknown").lower()
@@ -245,7 +260,9 @@ async def store_content_snapshots(
             else:
                 account.source_id = source_id
                 account.handle = handle or account.handle
-                account.display_name = display_name or account.display_name
+                profile = account.raw_profile if isinstance(account.raw_profile, dict) else {}
+                if not profile.get("display_name_custom"):
+                    account.display_name = display_name or account.display_name
                 account.profile_url = profile_url or account.profile_url
             account_cache[account_external_id] = account
 
@@ -262,6 +279,10 @@ async def store_content_snapshots(
             )
             work = result.scalar_one_or_none()
             published_raw = normalized.get("published_at") or None
+            if not published_raw and platform == "xiaohongshu":
+                inferred_published_at = _xiaohongshu_published_at(external_work_id)
+                if inferred_published_at is not None:
+                    published_raw = inferred_published_at.isoformat()
             if work is None:
                 is_new_work = True
                 work = ContentWork(

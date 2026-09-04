@@ -35,3 +35,20 @@ async def test_sunbird_works_endpoint_starts_empty(client):
     response = await client.get("/api/v1/integrations/sunbird/works")
     assert response.status_code == 200
     assert response.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_account_display_name_can_be_customized(client):
+    created = await client.post(
+        "/api/v1/integrations/sunbird/accounts",
+        json={"platform": "douyin", "external_account_id": "sec-custom-name"},
+    )
+    account_id = created.json()["data"]["account"]["id"]
+
+    updated = await client.patch(
+        f"/api/v1/integrations/sunbird/accounts/{account_id}",
+        json={"display_name": "我的自定义昵称"},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["data"]["display_name"] == "我的自定义昵称"

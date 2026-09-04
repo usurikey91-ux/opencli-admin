@@ -3,11 +3,16 @@
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.detector import evaluate_public_metrics
-from backend.models.content_monitor import ContentWork, DetectionResult, EngagementSnapshot
+from backend.models.content_monitor import (
+    ContentAccount,
+    ContentWork,
+    DetectionResult,
+    EngagementSnapshot,
+)
 
 
 FINAL_WINDOW = timedelta(days=7)
@@ -21,6 +26,41 @@ _METRIC_ATTRIBUTES = {
     "favorite_count": "favorite_count",
     "share_count": "share_count",
 }
+
+DEFAULT_MONITORING_RULES = {
+    "reference_work_count": 20,
+    "hot_multiple": 3.0,
+    "very_hot_multiple": 5.0,
+    "interval_hours": 4,
+    "inherit_global": True,
+}
+MINIMUM_REFERENCE_WORKS = 5
+
+
+def monitoring_rules_for_account(account: ContentAccount | None) -> dict[str, Any]:
+    rules = dict(DEFAULT_MONITORING_RULES)
+    raw_profile = account.raw_profile if account and isinstance(account.raw_profile, dict) else {}
+    stored = raw_profile.get("monitoring_rules")
+    if isinstance(stored, dict):
+        rules.update(stored)
+    rules["reference_work_count"] = max(5, min(50, int(rules["reference_work_count"])))
+    rules["hot_multiple"] = max(1.5, min(10.0, float(rules["hot_multiple"])))
+    rules["very_hot_multiple"] = max(2.0, min(20.0, float(rules["very_hot_multiple"])))
+    if rules["very_hot_multiple"] <= rules["hot_multiple"]:
+        rules["very_hot_multiple"] = min(20.0, rules["hot_multiple"] + 0.5)
+    rules["interval_hours"] = int(rules["interval_hours"])
+    rules["inherit_global"] = bool(rules.get("inherit_global", True))
+    return rules
+
+
+def _prior_work_filter(work: ContentWork):
+    return or_(
+        ContentWork.published_at < work.published_at,
+        and_(
+            ContentWork.published_at == work.published_at,
+            ContentWork.created_at < work.created_at,
+        ),
+    )
 
 
 def configured_metrics(source_config: dict[str, Any]) -> list[str] | None:
@@ -80,9 +120,9 @@ async def evaluate_final_snapshot(
 ) -> DetectionResult | None:
     """Evaluate one work only after its final seven-day snapshot exists.
 
-    The baseline is the account's 20 most recent prior works by publication
-    time. Every one of those works must have a final snapshot and the selected
-    metric; no content-type or suspected-promotion filter is applied.
+    The baseline contains only prior works and explicitly excludes the current
+    work. Accounts with 5..N prior works are evaluated with an actual-sample
+    marker; fewer than 5 remain insufficient.
     """
     selected_metrics = metric_names or ([metric_name] if metric_name else list(_METRIC_ATTRIBUTES))
     if not selected_metrics or any(name not in _METRIC_ATTRIBUTES for name in selected_metrics):
@@ -96,27 +136,33 @@ async def evaluate_final_snapshot(
         return None
     if snapshot.collected_at < work.published_at + FINAL_WINDOW:
         return None
+    account = await session.get(ContentAccount, work.account_id)
+    rules = monitoring_rules_for_account(account)
 
     works_result = await session.execute(
         select(ContentWork)
         .where(
             ContentWork.account_id == work.account_id,
             ContentWork.id != work.id,
+            _prior_work_filter(work),
         )
         .order_by(ContentWork.published_at.desc().nullslast(), ContentWork.created_at.desc())
-        .limit(20)
+        .limit(rules["reference_work_count"])
     )
     baseline_works = list(works_result.scalars().all())
     baseline_values: list[dict[str, int | None]] = []
     for baseline_work in baseline_works:
         baseline_snapshot = await _final_snapshot_for_work(session, baseline_work)
         baseline_values.append(_snapshot_metrics(baseline_snapshot, selected_metrics))
-
     decision = evaluate_public_metrics(
         metric_names=selected_metrics,
         current_values=_snapshot_metrics(snapshot, selected_metrics),
         baseline_values=baseline_values,
         finalized=True,
+        baseline_window=rules["reference_work_count"],
+        minimum_baseline=MINIMUM_REFERENCE_WORKS,
+        hot_multiple=rules["hot_multiple"],
+        very_hot_multiple=rules["very_hot_multiple"],
     )
 
     existing_result = await session.execute(
@@ -145,7 +191,10 @@ async def evaluate_final_snapshot(
     detection.enters_analysis = decision.enters_analysis
     detection.priority_analysis = decision.priority_analysis
     detection.status = decision.status
-    detection.evidence = decision.evidence()
+    evidence = decision.evidence()
+    evidence["configured_reference_work_count"] = rules["reference_work_count"]
+    evidence["sample_shortfall"] = max(0, rules["reference_work_count"] - decision.baseline_size)
+    detection.evidence = evidence
     await session.flush()
     return detection
 
@@ -156,7 +205,7 @@ async def evaluate_observed_snapshot(
     snapshot_id: str,
     metric_names: list[str] | None = None,
 ) -> DetectionResult | None:
-    """Classify an early snapshot against the account's latest 20 prior works.
+    """Classify an early snapshot against the account's configured prior works.
 
     This is the fast path for the product goal: a newly discovered work can
     enter the analysis queue as soon as its current public metrics are clearly
@@ -174,15 +223,18 @@ async def evaluate_observed_snapshot(
     work = await session.get(ContentWork, snapshot.work_id)
     if work is None or work.published_at is None:
         return None
+    account = await session.get(ContentAccount, work.account_id)
+    rules = monitoring_rules_for_account(account)
 
     works_result = await session.execute(
         select(ContentWork)
         .where(
             ContentWork.account_id == work.account_id,
             ContentWork.id != work.id,
+            _prior_work_filter(work),
         )
         .order_by(ContentWork.published_at.desc().nullslast(), ContentWork.created_at.desc())
-        .limit(20)
+        .limit(rules["reference_work_count"])
     )
     baseline_works = list(works_result.scalars().all())
     baseline_values: list[dict[str, int | None]] = []
@@ -196,12 +248,15 @@ async def evaluate_observed_snapshot(
         baseline_values.append(
             _snapshot_metrics(latest_result.scalar_one_or_none(), selected_metrics)
         )
-
     decision = evaluate_public_metrics(
         metric_names=selected_metrics,
         current_values=_snapshot_metrics(snapshot, selected_metrics),
         baseline_values=baseline_values,
         finalized=True,
+        baseline_window=rules["reference_work_count"],
+        minimum_baseline=MINIMUM_REFERENCE_WORKS,
+        hot_multiple=rules["hot_multiple"],
+        very_hot_multiple=rules["very_hot_multiple"],
     )
     existing_result = await session.execute(
         select(DetectionResult).where(
@@ -232,6 +287,8 @@ async def evaluate_observed_snapshot(
     evidence = decision.evidence()
     evidence["finalized"] = False
     evidence["observation_stage"] = "early_snapshot"
+    evidence["configured_reference_work_count"] = rules["reference_work_count"]
+    evidence["sample_shortfall"] = max(0, rules["reference_work_count"] - decision.baseline_size)
     evidence["reasons"] = [
         "基于当前公开数据快照的早期筛选，满 7 天后会用最终快照复核",
         *evidence.get("reasons", []),
@@ -239,3 +296,34 @@ async def evaluate_observed_snapshot(
     detection.evidence = evidence
     await session.flush()
     return detection
+
+
+async def recalculate_account_detections(
+    session: AsyncSession, account_id: str, metric_names: list[str] | None = None
+) -> int:
+    """Re-evaluate every work from stored snapshots after a rule change."""
+    result = await session.execute(
+        select(ContentWork)
+        .where(ContentWork.account_id == account_id)
+        .order_by(ContentWork.published_at.asc().nullsfirst(), ContentWork.created_at.asc())
+    )
+    recalculated = 0
+    for work in result.scalars().all():
+        latest_result = await session.execute(
+            select(EngagementSnapshot)
+            .where(EngagementSnapshot.work_id == work.id)
+            .order_by(EngagementSnapshot.collected_at.desc())
+            .limit(1)
+        )
+        snapshot = latest_result.scalar_one_or_none()
+        if snapshot is None:
+            continue
+        if await evaluate_observed_snapshot(
+            session, snapshot_id=snapshot.id, metric_names=metric_names
+        ):
+            recalculated += 1
+        if work.published_at and snapshot.collected_at >= work.published_at + FINAL_WINDOW:
+            await evaluate_final_snapshot(
+                session, snapshot_id=snapshot.id, metric_names=metric_names
+            )
+    return recalculated

@@ -80,7 +80,7 @@ async def test_unconfigured_account_cannot_start_check(db_session):
 
 
 @pytest.mark.asyncio
-async def test_list_bound_accounts_hides_unconfigured_accounts(db_session):
+async def test_list_bound_accounts_includes_unconfigured_accounts(db_session):
     bound, _, _ = await service.bind_account(
         db_session,
         SunbirdAccountBindRequest(
@@ -101,8 +101,9 @@ async def test_list_bound_accounts_hides_unconfigured_accounts(db_session):
 
     accounts, total = await service.list_bound_accounts(db_session)
 
-    assert total == 1
-    assert [account.id for account in accounts] == [bound.id]
+    assert total == 2
+    assert bound.id in {account.id for account in accounts}
+    assert "sec-unconfigured" in {account.external_account_id for account in accounts}
 
 
 @pytest.mark.asyncio
@@ -122,6 +123,97 @@ async def test_idempotent_rebind_preserves_successful_collection_status(db_sessi
     assert created is False
     assert rebound.collection_status == "ok"
     assert rebound.last_success_at is not None
+
+
+@pytest.mark.asyncio
+async def test_bind_account_uses_resolved_profile_name(db_session, monkeypatch):
+    async def fake_resolver(platform, profile_url):
+        assert platform == "douyin"
+        assert profile_url.endswith("sec-named")
+        return "真实昵称"
+
+    monkeypatch.setattr(service, "resolve_profile_display_name", fake_resolver)
+    account, _, _ = await service.bind_account(
+        db_session,
+        SunbirdAccountBindRequest(
+            platform="douyin",
+            external_account_id="sec-named",
+            profile_url="https://www.douyin.com/user/sec-named",
+        ),
+    )
+
+    assert account.display_name == "真实昵称"
+
+
+@pytest.mark.asyncio
+async def test_rebind_preserves_custom_display_name(db_session, monkeypatch):
+    account, _, _ = await service.bind_account(
+        db_session,
+        SunbirdAccountBindRequest(
+            platform="douyin",
+            external_account_id="sec-custom",
+            display_name="我的备注",
+        ),
+    )
+    account.raw_profile = {"display_name_custom": True}
+    await db_session.flush()
+
+    async def unexpected_resolver(*_args):
+        raise AssertionError("custom names must not trigger automatic replacement")
+
+    monkeypatch.setattr(service, "resolve_profile_display_name", unexpected_resolver)
+    rebound, _, _ = await service.bind_account(
+        db_session,
+        SunbirdAccountBindRequest(
+            platform="douyin",
+            external_account_id="sec-custom",
+            profile_url="https://www.douyin.com/user/sec-custom",
+        ),
+    )
+
+    assert rebound.display_name == "我的备注"
+
+
+@pytest.mark.asyncio
+async def test_purge_account_removes_account_schedule_and_history(db_session):
+    account, schedule, _ = await service.bind_account(
+        db_session,
+        SunbirdAccountBindRequest(
+            platform="douyin", external_account_id="sec-purge", display_name="creator"
+        ),
+    )
+    work = ContentWork(
+        account_id=account.id,
+        external_work_id="work-purged",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        raw_identity={},
+    )
+    db_session.add(work)
+    await db_session.flush()
+    snapshot = EngagementSnapshot(work_id=work.id, metrics={"like_count": 10}, raw_data={})
+    db_session.add(snapshot)
+    await db_session.flush()
+    detection = DetectionResult(
+        work_id=work.id,
+        snapshot_id=snapshot.id,
+        detector_version="purge-test",
+        metric_name="like_count",
+        baseline_size=20,
+        baseline_missing_count=0,
+        status="observing",
+        evidence={},
+    )
+    db_session.add(detection)
+    await db_session.flush()
+    account_id, schedule_id, work_id = account.id, schedule.id, work.id
+
+    result = await service.remove_account(db_session, account)
+
+    assert result["purged"] is True
+    assert await db_session.get(ContentAccount, account_id) is None
+    assert await db_session.get(CronSchedule, schedule_id) is None
+    assert await db_session.get(ContentWork, work_id) is None
 
 
 @pytest.mark.asyncio

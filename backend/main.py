@@ -178,6 +178,11 @@ def create_app() -> FastAPI:
     async def health() -> dict:
         return {"status": "ok", "version": "0.1.0", "task_executor": settings.task_executor}
 
+    # Keep the API-prefixed health URL aligned with frontend node/browser checks.
+    @app.get("/api/v1/health")
+    async def api_health() -> dict:
+        return await health()
+
     return app
 
 

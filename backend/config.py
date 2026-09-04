@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     api_key_enabled: bool = False
     api_key: str = ""
 
-    # MVP feature gates. Collection and snapshotting remain enabled; model
-    # processing and outbound notifications require an explicit later opt-in.
-    builtin_ai_enabled: bool = False
+    # AI runs when a source or task has an enabled agent configured. With no
+    # agent configuration the pipeline still skips this step safely.
+    builtin_ai_enabled: bool = True
     notifications_enabled: bool = False
 
     # Email

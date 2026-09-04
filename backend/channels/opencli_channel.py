@@ -454,6 +454,26 @@ class OpenCLIChannel(AbstractChannel):
                 logger.warning("opencli stderr | %s", stderr_text[:500])
 
             if returncode != 0:
+                # CDP can detach transiently while a page is being handled.
+                # Retry this known transport failure once; do not repeat
+                # arbitrary command failures that may have side effects.
+                if "Detached while handling command" in stderr_text:
+                    logger.warning("opencli detached from CDP; retrying once")
+                    await asyncio.sleep(1)
+                    try:
+                        if mode == "cdp":
+                            pre_tab_ids = await _snapshot_tab_ids(cdp_endpoint)
+                        returncode, stdout_text, stderr_text = await _run_opencli(cmd, env)
+                    except Exception as exc:
+                        logger.error("opencli retry failed | %s", exc)
+                        return ChannelResult.fail(f"opencli retry failed: {exc}")
+                    finally:
+                        if mode == "cdp":
+                            await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
+                    if stderr_text:
+                        logger.warning("opencli retry stderr | %s", stderr_text[:500])
+
+            if returncode != 0:
                 logger.error("opencli exit=%d | stderr=%s", returncode, stderr_text[:500])
                 return ChannelResult.fail(f"opencli exited with code {returncode}: {stderr_text}")
 

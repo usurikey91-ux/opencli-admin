@@ -68,7 +68,7 @@ def test_missing_metric_in_latest_twenty_is_not_replaced_by_older_work():
     assert decision.status == "insufficient_data"
 
 
-def test_fewer_than_twenty_valid_works_is_insufficient():
+def test_partial_target_sample_is_still_evaluated_after_five_works():
     decision = evaluate_public_metric(
         metric_name="like_count",
         current_value=10_000,
@@ -76,9 +76,22 @@ def test_fewer_than_twenty_valid_works_is_insufficient():
         finalized=True,
     )
 
-    assert decision.status == "insufficient_data"
+    assert decision.status == "very_hot"
     assert decision.baseline_size == 19
     assert decision.baseline_missing_count == 0
+    assert decision.enters_analysis is True
+
+
+def test_fewer_than_five_works_is_insufficient():
+    decision = evaluate_public_metric(
+        metric_name="like_count",
+        current_value=10_000,
+        baseline_values=[1_000] * 4,
+        finalized=True,
+    )
+
+    assert decision.status == "insufficient_data"
+    assert decision.baseline_size == 4
     assert decision.enters_analysis is False
 
 
@@ -122,7 +135,7 @@ def test_composite_detector_uses_available_public_metrics_without_complete_rows(
     ] * 7
     decision = evaluate_public_metrics(
         metric_names=["like_count", "favorite_count", "share_count"],
-        current_values={"like_count": 2_000, "favorite_count": None, "share_count": 10},
+        current_values={"like_count": 3_000, "favorite_count": None, "share_count": 10},
         baseline_values=baseline[:20],
         finalized=True,
     )

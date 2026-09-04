@@ -1,8 +1,16 @@
 """Small, replaceable contract between the content workbench and OpenCLI Admin."""
 
 from datetime import UTC, datetime
+import asyncio
+import html
+import json
+import re
+import shutil
+import subprocess
+import tempfile
 from typing import Any
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,7 +19,7 @@ from backend.models.content_monitor import ContentAccount, ContentWork
 from backend.models.schedule import CronSchedule
 from backend.models.source import DataSource
 from backend.schemas.sunbird import SunbirdAccountBindRequest
-from backend.services import content_account_service, task_service
+from backend.services import content_account_service, content_detection, task_service
 
 DOUYIN_USER_VIDEOS_SOURCE_NAME = "Content Workbench · Douyin public works"
 LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME = "Sunbird · Douyin public works"
@@ -27,6 +35,186 @@ DOUYIN_USER_VIDEOS_CONFIG = {
     },
     "content_monitoring": {},
 }
+
+_INTERVAL_CRON = {
+    1: "0 * * * *",
+    2: "0 */2 * * *",
+    4: "0 */4 * * *",
+    8: "0 */8 * * *",
+    12: "0 */12 * * *",
+    24: "0 0 * * *",
+}
+
+
+def account_monitoring_rules(account: ContentAccount) -> dict[str, Any]:
+    return content_detection.monitoring_rules_for_account(account)
+
+
+async def _account_schedule(
+    session: AsyncSession, account: ContentAccount
+) -> CronSchedule | None:
+    if not account.collection_source_id:
+        return None
+    result = await session.execute(
+        select(CronSchedule).where(CronSchedule.source_id == account.collection_source_id)
+    )
+    return next(
+        (
+            item
+            for item in result.scalars().all()
+            if isinstance(item.parameters, dict)
+            and item.parameters.get("sunbird_account_id") == account.id
+        ),
+        None,
+    )
+
+
+async def apply_monitoring_rules(
+    session: AsyncSession, account: ContentAccount, rules: dict[str, Any]
+) -> dict[str, Any]:
+    normalized = {**content_detection.DEFAULT_MONITORING_RULES, **rules}
+    # Validation normally happens in the request schema. Clamp again here so
+    # older stored values cannot break collection or classification.
+    normalized["reference_work_count"] = max(5, min(50, int(normalized["reference_work_count"])))
+    normalized["hot_multiple"] = max(1.5, min(10.0, float(normalized["hot_multiple"])))
+    normalized["very_hot_multiple"] = max(2.0, min(20.0, float(normalized["very_hot_multiple"])))
+    normalized["interval_hours"] = int(normalized["interval_hours"])
+    normalized["inherit_global"] = bool(normalized.get("inherit_global", True))
+    if normalized["interval_hours"] not in _INTERVAL_CRON:
+        raise ValueError("Unsupported inspection interval")
+    if normalized["very_hot_multiple"] <= normalized["hot_multiple"]:
+        raise ValueError("Very-hot multiple must be greater than hot multiple")
+    account.raw_profile = {
+        **(account.raw_profile or {}),
+        "monitoring_rules": normalized,
+    }
+    account.collection_args = {
+        **(account.collection_args or {}),
+        # Internal collection includes the candidate plus N possible prior works.
+        "limit": normalized["reference_work_count"] + 1,
+    }
+    schedule = await _account_schedule(session, account)
+    if schedule:
+        schedule.cron_expression = _INTERVAL_CRON[normalized["interval_hours"]]
+        schedule.parameters = {
+            **(schedule.parameters or {}),
+            **account.collection_args,
+            "sunbird_account_id": account.id,
+            "external_account_id": account.external_account_id,
+        }
+        if account.platform.lower() == "douyin":
+            schedule.parameters = {
+                **schedule.parameters,
+                "sec_uid": account.external_account_id,
+            }
+    await session.flush()
+    return normalized
+
+
+async def set_monitoring_enabled(
+    session: AsyncSession, account: ContentAccount, enabled: bool
+) -> None:
+    account.collection_enabled = bool(enabled)
+    account.collection_status = "ready" if enabled else "paused"
+    account.last_error_code = None
+    account.last_error_message = None
+    schedule = await _account_schedule(session, account)
+    if schedule:
+        schedule.enabled = bool(enabled)
+    await session.flush()
+
+
+def _clean_profile_name(value: str | None) -> str | None:
+    name = html.unescape(str(value or "")).strip()
+    if "的个人空间" in name:
+        name = name.split("的个人空间", 1)[0].strip()
+    for suffix in (
+        "的个人空间_哔哩哔哩_bilibili",
+        "的个人空间-哔哩哔哩",
+        " - 快手",
+        "- 快手",
+        " - 小红书",
+        "- 小红书",
+        "的抖音 - 抖音",
+        "的抖音-抖音",
+        "的抖音",
+    ):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)].strip()
+    if (
+        not name
+        or name in {"抖音", "快手", "小红书", "哔哩哔哩"}
+        or "验证码" in name
+        or "你的生活兴趣社区" in name
+    ):
+        return None
+    return name[:255]
+
+
+async def _resolve_profile_name_with_opencli(profile_url: str) -> str | None:
+    executable = shutil.which("opencli.cmd") or shutil.which("opencli")
+    if not executable:
+        return None
+
+    def run() -> str | None:
+        with tempfile.TemporaryDirectory(prefix="sunbird-profile-") as workdir:
+            try:
+                completed = subprocess.run(
+                    [executable, "web", "read", "--url", profile_url, "-f", "json"],
+                    cwd=workdir,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+        if completed.returncode != 0:
+            return None
+        try:
+            rows = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+            return None
+        return _clean_profile_name(rows[0].get("title"))
+
+    return await asyncio.to_thread(run)
+
+
+async def resolve_profile_display_name(platform: str, profile_url: str | None) -> str | None:
+    """Best-effort public profile nickname lookup; collection still works if blocked."""
+    if not profile_url:
+        return None
+    try:
+        async with httpx.AsyncClient(
+            timeout=8,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"},
+        ) as client:
+            response = await client.get(profile_url)
+            response.raise_for_status()
+    except (httpx.HTTPError, ValueError):
+        return await _resolve_profile_name_with_opencli(profile_url)
+
+    text = response.text
+    # Douyin and Xiaohongshu expose the public nickname in hydrated JSON.
+    for match in re.finditer(r'"nickname"\s*:\s*"((?:\\.|[^"\\])*)"', text):
+        try:
+            candidate = json.loads(f'"{match.group(1)}"')
+        except json.JSONDecodeError:
+            candidate = match.group(1)
+        cleaned = _clean_profile_name(candidate)
+        if cleaned:
+            return cleaned
+
+    for title in re.finditer(r"<title[^>]*>(.*?)</title>", text, re.IGNORECASE | re.DOTALL):
+        cleaned = _clean_profile_name(title.group(1))
+        if cleaned:
+            return cleaned
+    return await _resolve_profile_name_with_opencli(profile_url)
 
 
 async def _get_platform_source(session: AsyncSession, platform: str) -> DataSource | None:
@@ -115,8 +303,41 @@ async def _get_or_create_douyin_source(session: AsyncSession) -> DataSource:
 async def bind_account(
     session: AsyncSession, body: SunbirdAccountBindRequest
 ) -> tuple[ContentAccount, CronSchedule | None, bool]:
+    existing_result = await session.execute(
+        select(ContentAccount).where(
+            ContentAccount.platform == body.platform.lower(),
+            ContentAccount.external_account_id == body.external_account_id,
+        )
+    )
+    existing_account = existing_result.scalar_one_or_none()
+    existing_profile = (
+        existing_account.raw_profile
+        if existing_account and isinstance(existing_account.raw_profile, dict)
+        else {}
+    )
+    custom_name = bool(existing_profile.get("display_name_custom"))
+    if custom_name:
+        body = body.model_copy(update={"display_name": None})
+    elif not body.display_name and body.profile_url:
+        resolved_name = await resolve_profile_display_name(body.platform, body.profile_url)
+        if resolved_name:
+            body = body.model_copy(update={"display_name": resolved_name})
     items, created = await content_account_service.import_accounts(session, [body])
     account = items[0]
+    existing_rules = existing_profile.get("monitoring_rules")
+    requested_rules = (
+        {**content_detection.DEFAULT_MONITORING_RULES, **existing_rules}
+        if existing_account is not None and isinstance(existing_rules, dict)
+        else (
+            body.monitoring_rules.model_dump()
+            if body.monitoring_rules is not None
+            else account_monitoring_rules(account)
+        )
+    )
+    account.raw_profile = {
+        **(account.raw_profile or {}),
+        "monitoring_rules": requested_rules,
+    }
     if not account.display_name or account.display_name in {
         LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME,
         DOUYIN_USER_VIDEOS_SOURCE_NAME,
@@ -157,6 +378,7 @@ async def bind_account(
             **(source.channel_config.get("args") or {}),
             **body.args,
             "external_account_id": account.external_account_id,
+            "limit": requested_rules["reference_work_count"] + 1,
         }
         if platform == "douyin":
             collection_args["sec_uid"] = account.external_account_id
@@ -195,7 +417,7 @@ async def bind_account(
             schedule = CronSchedule(
                 source_id=source.id,
                 name=f"Content benchmark {account.display_name or account.external_account_id}",
-                cron_expression="0 */4 * * *",
+                cron_expression=_INTERVAL_CRON[requested_rules["interval_hours"]],
                 timezone="UTC",
                 parameters=params,
                 enabled=body.enabled,
@@ -205,12 +427,41 @@ async def bind_account(
             schedule.name = f"Content benchmark {account.display_name or account.external_account_id}"
             schedule.enabled = body.enabled
             schedule.parameters = params
+            schedule.cron_expression = _INTERVAL_CRON[requested_rules["interval_hours"]]
         await session.flush()
     return account, schedule, bool(created)
 
 
 async def get_account(session: AsyncSession, account_id: str) -> ContentAccount | None:
     return await session.get(ContentAccount, account_id)
+
+
+async def remove_account(
+    session: AsyncSession, account: ContentAccount
+) -> dict[str, Any]:
+    """Permanently remove an account and all of its monitoring history."""
+    result = await session.execute(
+        select(CronSchedule).where(CronSchedule.source_id == account.collection_source_id)
+    )
+    schedules = [
+        item
+        for item in result.scalars().all()
+        if isinstance(item.parameters, dict)
+        and item.parameters.get("sunbird_account_id") == account.id
+    ]
+    work_count = await session.scalar(
+        select(func.count()).select_from(ContentWork).where(ContentWork.account_id == account.id)
+    )
+    for schedule in schedules:
+        await session.delete(schedule)
+    await session.delete(account)
+    await session.flush()
+    return {
+        "account_id": account.id,
+        "purged": True,
+        "history_preserved": False,
+        "works_affected": int(work_count or 0),
+    }
 
 
 async def list_bound_accounts(
@@ -242,6 +493,8 @@ async def list_bound_accounts(
 async def create_check_task(session: AsyncSession, account: ContentAccount):
     if not account.collection_source_id or not account.collection_command:
         raise ValueError("account collection is not configured")
+    if not account.collection_enabled:
+        raise ValueError("account monitoring is paused")
     account.collection_status = "checking"
     account.last_collection_at = datetime.now(UTC)
     account.last_error_code = None
@@ -310,6 +563,23 @@ def work_contract(work: ContentWork) -> dict[str, Any]:
             key=lambda item: item.evaluated_at,
             default=None,
         )
+    relative_multiple = detection.relative_multiple if detection else None
+    if relative_multiple is not None:
+        if relative_multiple >= 5.0:
+            current_status = "very_hot"
+            current_priority = True
+        elif relative_multiple >= 3.0:
+            current_status = "hot"
+            current_priority = False
+        elif detection and detection.status in {"hot", "very_hot"}:
+            current_status = "observing"
+            current_priority = False
+        else:
+            current_status = detection.status if detection else "observing"
+            current_priority = False
+    else:
+        current_status = detection.status if detection else ("observing" if latest else "not_seen")
+        current_priority = bool(detection and detection.priority_analysis)
     return {
         "account": {
             "id": work.account.id,
@@ -326,9 +596,9 @@ def work_contract(work: ContentWork) -> dict[str, Any]:
         "published_at": work.published_at,
         "latest_public_metrics": latest.metrics if latest else {},
         "final_public_metrics": latest.metrics if latest and detection else {},
-        "relative_multiple": detection.relative_multiple if detection else None,
-        "status": detection.status if detection else ("observing" if latest else "not_seen"),
-        "priority": bool(detection and detection.priority_analysis),
+        "relative_multiple": relative_multiple,
+        "status": current_status,
+        "priority": current_priority,
         "evidence": detection.evidence if detection else {},
     }
 
@@ -339,6 +609,7 @@ async def list_work_contracts(
     status: str | None = None,
     priority: bool | None = None,
     account_id: str | None = None,
+    platform: str | None = None,
     page: int = 1,
     limit: int = 50,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -358,6 +629,9 @@ async def list_work_contracts(
         contracts = [item for item in contracts if item["priority"] == priority]
     if account_id:
         contracts = [item for item in contracts if item["account"]["id"] == account_id]
+    if platform:
+        normalized_platform = platform.strip().lower()
+        contracts = [item for item in contracts if item["platform"] == normalized_platform]
     total = len(contracts)
     offset = (page - 1) * limit
     return contracts[offset : offset + limit], total

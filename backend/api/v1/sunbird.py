@@ -10,12 +10,27 @@ from backend.schemas.common import ApiResponse, PaginationMeta
 from backend.schemas.sunbird import (
     SunbirdAccountBindRequest,
     SunbirdAccountRead,
+    SunbirdAccountUpdateRequest,
     SunbirdCheckRead,
     SunbirdWorkRead,
 )
 from backend.services import sunbird_integration_service as service
+from backend.services.content_detection import recalculate_account_detections
 
 router = APIRouter(prefix="/integrations/sunbird", tags=["sunbird-integration"])
+
+_PLATFORM_LABELS = {
+    "douyin": "抖音",
+    "xiaohongshu": "小红书",
+    "bilibili": "哔哩哔哩",
+    "kuaishou": "快手",
+}
+
+
+def _account_read(account) -> SunbirdAccountRead:
+    return SunbirdAccountRead.model_validate(account).model_copy(
+        update={"monitoring_rules": service.account_monitoring_rules(account)}
+    )
 
 
 @router.get("/platforms", response_model=ApiResponse[list[dict]])
@@ -36,7 +51,7 @@ async def list_sunbird_platforms(db: AsyncSession = Depends(get_db)) -> ApiRespo
             platform,
             {
                 "id": platform,
-                "label": platform,
+                "label": _PLATFORM_LABELS.get(platform, platform),
                 "source_id": source.id,
                 "command": config.get("command"),
                 "status": "configured",
@@ -57,7 +72,7 @@ async def bind_sunbird_account(
     return ApiResponse.ok(
         {
             "created": created,
-            "account": SunbirdAccountRead.model_validate(account).model_dump(),
+            "account": _account_read(account).model_dump(),
             "schedule": (
                 {
                     "id": schedule.id,
@@ -82,7 +97,7 @@ async def list_sunbird_accounts(
         db, platform=platform, page=page, limit=limit
     )
     return ApiResponse.ok(
-        data=[SunbirdAccountRead.model_validate(account) for account in accounts],
+        data=[_account_read(account) for account in accounts],
         meta=PaginationMeta(total=total, page=page, limit=limit, pages=max(1, -(-total // limit))),
     )
 
@@ -112,17 +127,56 @@ async def check_sunbird_account(account_id: str, db: AsyncSession = Depends(get_
     )
 
 
+@router.delete("/accounts/{account_id}", response_model=ApiResponse[dict])
+async def remove_sunbird_account(
+    account_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    account = await service.get_account(db, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    result = await service.remove_account(db, account)
+    await db.commit()
+    return ApiResponse.ok(result)
+
+
+@router.patch("/accounts/{account_id}", response_model=ApiResponse[SunbirdAccountRead])
+async def update_sunbird_account(
+    account_id: str,
+    body: SunbirdAccountUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    account = await service.get_account(db, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if body.display_name is not None:
+        account.display_name = body.display_name.strip()
+        account.raw_profile = {**(account.raw_profile or {}), "display_name_custom": True}
+    if body.monitoring_rules is not None:
+        await service.apply_monitoring_rules(
+            db, account, body.monitoring_rules.model_dump()
+        )
+        await recalculate_account_detections(db, account.id)
+    if body.enabled is not None:
+        await service.set_monitoring_enabled(db, account, body.enabled)
+    await db.commit()
+    await db.refresh(account)
+    return ApiResponse.ok(_account_read(account))
+
+
 @router.get("/works", response_model=ApiResponse[list[SunbirdWorkRead]])
 async def list_sunbird_works(
     status: str | None = None,
     priority: bool | None = None,
     account_id: str | None = None,
+    platform: str | None = None,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
     contracts, total = await service.list_work_contracts(
-        db, status=status, priority=priority, account_id=account_id, page=page, limit=limit
+        db, status=status, priority=priority, account_id=account_id,
+        platform=platform, page=page, limit=limit
     )
     return ApiResponse.ok(
         data=[SunbirdWorkRead.model_validate(item) for item in contracts],

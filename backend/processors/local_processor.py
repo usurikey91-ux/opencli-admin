@@ -70,4 +70,9 @@ class LocalProcessor(AbstractProcessor):
                 except Exception as exc:
                     enrichments.append({"error": str(exc)})
 
-        return ProcessingResult(success=True, enrichments=enrichments)
+        errors = sum(1 for e in enrichments if "error" in e)
+        return ProcessingResult(
+            success=errors == 0,
+            enrichments=enrichments,
+            error=f"{errors}/{len(records)} requests failed" if errors else None,
+        )

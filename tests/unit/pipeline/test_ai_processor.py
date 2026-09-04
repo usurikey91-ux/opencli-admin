@@ -45,3 +45,25 @@ async def test_process_with_ai_enriches_records():
     assert records[0].ai_enrichment == {"summary": "Summary 1"}
     assert records[1].ai_enrichment == {"summary": "Summary 2"}
     assert records[0].status == "ai_processed"
+
+
+@pytest.mark.asyncio
+async def test_process_with_ai_does_not_mark_error_payload_as_processed():
+    records = [MagicMock()]
+    records[0].ai_enrichment = None
+    records[0].status = "normalized"
+    mock_processor = AsyncMock()
+    mock_processor.process = AsyncMock(
+        return_value=ProcessingResult(
+            success=False,
+            enrichments=[{"error": "provider unavailable"}],
+            error="1/1 requests failed",
+        )
+    )
+
+    with patch("backend.pipeline.ai_processor.get_processor", return_value=mock_processor):
+        result = await process_with_ai(records, {"processor_type": "openai"})
+
+    assert result.success is False
+    assert records[0].ai_enrichment is None
+    assert records[0].status == "normalized"
