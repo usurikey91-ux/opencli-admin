@@ -12,7 +12,10 @@ export default defineConfig({
   server: {
     // Keep the documented default while allowing local runs to choose a port
     // (for example FRONTEND_PORT=5174) without relying on CLI-only overrides.
-    port: Number(process.env.FRONTEND_PORT ?? 8030),
+    // OpenCLI Admin is intentionally isolated from the content workbench's 5174.
+    // Use 5175 by default; FRONTEND_PORT can still override it explicitly.
+    port: Number(process.env.FRONTEND_PORT ?? 5175),
+    strictPort: true,
     // Allow requests from Docker containers (host.docker.internal) and any LAN IP
     // Dev-only: production uses nginx which doesn't have this restriction
     allowedHosts: true,
