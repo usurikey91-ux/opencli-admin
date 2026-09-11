@@ -52,3 +52,19 @@ async def test_account_display_name_can_be_customized(client):
 
     assert updated.status_code == 200
     assert updated.json()["data"]["display_name"] == "我的自定义昵称"
+
+
+@pytest.mark.asyncio
+async def test_account_display_name_rejects_blank_value(client):
+    created = await client.post(
+        "/api/v1/integrations/sunbird/accounts",
+        json={"platform": "douyin", "external_account_id": "sec-blank-name"},
+    )
+    account_id = created.json()["data"]["account"]["id"]
+
+    updated = await client.patch(
+        f"/api/v1/integrations/sunbird/accounts/{account_id}",
+        json={"display_name": "   "},
+    )
+
+    assert updated.status_code == 422

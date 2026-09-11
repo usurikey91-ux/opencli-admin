@@ -17,7 +17,30 @@ def _latest_snapshot(work: ContentWork):
 
 
 def _latest_detection(work: ContentWork):
-    return max(work.detections, key=lambda item: item.evaluated_at, default=None)
+    """Select the user-facing detection without hiding an earlier hot result.
+
+    A final-window recheck can temporarily be ``insufficient_data`` while an
+    earlier observed snapshot already qualified the work for analysis. Keep
+    that candidate visible until a valid final decision replaces it.
+    """
+    final_detections = [
+        item for item in work.detections if item.detector_version == "v1-final-7d"
+    ]
+    final_detection = max(final_detections, key=lambda item: item.evaluated_at, default=None)
+    if final_detection and final_detection.status not in {"insufficient_data", "pending_final_window"}:
+        return final_detection
+
+    early_candidates = [
+        item
+        for item in work.detections
+        if item.detector_version == "v1-observed"
+        and item.status in {"hot", "very_hot"}
+    ]
+    return max(
+        early_candidates or work.detections,
+        key=lambda item: item.evaluated_at,
+        default=None,
+    )
 
 
 def work_status(work: ContentWork) -> str:

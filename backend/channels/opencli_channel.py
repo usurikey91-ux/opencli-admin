@@ -3,6 +3,7 @@
 import asyncio
 import csv
 import io
+import inspect
 import logging
 import os
 import shutil
@@ -46,6 +47,7 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
     key = (bin_path, site, command)
     if key in _help_cache:
         return _help_cache[key]
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             bin_path, site, command, "--help",
@@ -58,6 +60,16 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
         names = frozenset(re.findall(r"--([a-zA-Z][a-zA-Z0-9_-]*)", text)) - {
             "format", "verbose", "help"
         }
+    except asyncio.TimeoutError as exc:
+        if proc is not None:
+            kill_result = proc.kill()
+            if inspect.isawaitable(kill_result):
+                await kill_result
+            wait_result = proc.wait()
+            if inspect.isawaitable(wait_result):
+                await wait_result
+        logger.debug("timed out fetching --help for %s %s: %s", site, command, exc)
+        names = frozenset()
     except Exception as exc:
         logger.debug("could not fetch --help for %s %s: %s", site, command, exc)
         names = frozenset()
@@ -312,8 +324,12 @@ async def _run_opencli(cmd: list[str], env: dict) -> tuple[int, str, str]:
         return proc.returncode, stdout.decode(), stderr.decode().strip()
     except asyncio.TimeoutError:
         if proc:
-            proc.kill()
-            await proc.wait()
+            kill_result = proc.kill()
+            if inspect.isawaitable(kill_result):
+                await kill_result
+            wait_result = proc.wait()
+            if inspect.isawaitable(wait_result):
+                await wait_result
         raise
     except FileNotFoundError:
         raise
@@ -437,7 +453,9 @@ class OpenCLIChannel(AbstractChannel):
                 logger.error("opencli timeout | cmd=%s", " ".join(cmd))
                 if mode == "cdp":
                     await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
-                return ChannelResult.fail("opencli command timed out after 120s")
+                return ChannelResult.fail(
+                    f"opencli command timed out after {settings.opencli_timeout}s"
+                )
             except FileNotFoundError:
                 logger.error("opencli binary not found: %s", opencli_bin)
                 return ChannelResult.fail(f"opencli binary not found: {opencli_bin}")

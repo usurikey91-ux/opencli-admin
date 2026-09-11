@@ -414,7 +414,11 @@ async def collect(req: CollectRequest) -> dict:
             await proc.wait()
         if mode == "cdp":
             await _cleanup_cdp_tabs(cdp_ep, pre_tab_ids)
-        return {"success": False, "items": [], "error": "opencli timed out after 120s"}
+        return {
+            "success": False,
+            "items": [],
+            "error": f"opencli timed out after {_OPENCLI_TIMEOUT}s",
+        }
     except Exception as exc:
         logger.exception("subprocess error | %s", exc)
         if mode == "cdp":

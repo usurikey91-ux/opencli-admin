@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.schemas.common import UTCModel
 
@@ -34,6 +34,16 @@ class SunbirdAccountBindRequest(BaseModel):
     enabled: bool = True
     monitoring_rules: SunbirdMonitoringRules | None = None
 
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("display_name must not be blank")
+        return value
+
 
 class SunbirdAccountRead(UTCModel):
     id: str
@@ -60,6 +70,16 @@ class SunbirdAccountUpdateRequest(BaseModel):
     display_name: str | None = Field(None, min_length=1, max_length=255)
     monitoring_rules: SunbirdMonitoringRules | None = None
     enabled: bool | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("display_name must not be blank")
+        return value
 
     @model_validator(mode="after")
     def validate_update(self):

@@ -95,7 +95,7 @@ export default function ContentMonitorPage() {
     },
   })
 
-  if (isLoading) return <><PageHeader title="作品观察" description="只展示已采集作品及其最终热度判定（火 ≥ 3×，特别火 ≥ 5×）" /><Card padding={false}><TableSkeleton rows={8} /></Card></>
+  if (isLoading) return <><PageHeader title="作品观察" description="只展示已采集作品及其热度判定与分析阶段" /><Card padding={false}><TableSkeleton rows={8} /></Card></>
   if (error) return <ErrorAlert error={error as Error} onRetry={refetch} />
 
   const works = data?.data ?? []
@@ -104,7 +104,7 @@ export default function ContentMonitorPage() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <PageHeader title="作品观察" description="只展示已采集作品及其最终热度判定（火 ≥ 3×，特别火 ≥ 5×）" />
+        <PageHeader title="作品观察" description="只展示已采集作品及其热度判定与分析阶段" />
         <button onClick={() => setShowImport(true)} className="mt-1 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"><Upload size={15} />导入对标账号</button>
       </div>
       <Card>
@@ -135,9 +135,9 @@ export default function ContentMonitorPage() {
             <thead><tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">作品</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">账号</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">最终指标</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">热度</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">指标</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">状态</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">阶段</th>
             </tr></thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {works.map((work) => (
@@ -145,8 +145,8 @@ export default function ContentMonitorPage() {
                   <td className="px-4 py-3 max-w-md"><div className="font-medium truncate">{work.title || work.content || work.external_work_id}</div>{work.url && <a href={work.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 inline-flex items-center gap-1 mt-1">打开原作 <ExternalLink size={11} /></a>}</td>
                   <td className="px-4 py-3 text-gray-600">{work.account_display_name || work.account_handle || '—'}<div className="text-xs text-gray-400">{work.platform}</div></td>
                   <td className="px-4 py-3 font-mono text-xs">{formatMetric(work)}</td>
-                  <td className="px-4 py-3 text-xs">{work.detection?.metric_name || '—'}</td>
                   <td className="px-4 py-3"><span className={`inline-flex px-2 py-1 rounded-full border text-xs font-medium ${statusClass(work.status)}`}>{STATUS_LABELS[work.status] || work.status}</span></td>
+                  <td className="px-4 py-3 text-xs text-gray-600">{work.detection?.evidence?.observation_stage === 'early_snapshot' ? '早期观察' : work.detection ? '已判定' : '待采集'}</td>
                 </tr>
               ))}
             </tbody>

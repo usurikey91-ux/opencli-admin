@@ -124,6 +124,13 @@ async def test_collect_builds_cmd_with_positional_args_before_named_options(
 
     with (
         patch("asyncio.create_subprocess_exec", side_effect=fake_subprocess),
+        # The channel probes `<site> <command> --help` once to distinguish
+        # named options from positional arguments. Stub that probe here so
+        # this test captures only the command under assertion.
+        patch(
+            "backend.channels.opencli_channel._get_named_options",
+            return_value=frozenset({"type", "limit"}),
+        ),
         patch("backend.browser_pool.get_pool", return_value=_pool_mock("bridge")),
         patch("backend.config.get_settings", return_value=_settings_mock("local")),
     ):
@@ -163,6 +170,10 @@ async def test_collect_without_positional_args_backward_compat(
 
     with (
         patch("asyncio.create_subprocess_exec", side_effect=fake_subprocess),
+        patch(
+            "backend.channels.opencli_channel._get_named_options",
+            return_value=frozenset({"limit"}),
+        ),
         patch("backend.browser_pool.get_pool", return_value=_pool_mock("cdp")),
         patch("backend.config.get_settings", return_value=_settings_mock("local")),
     ):

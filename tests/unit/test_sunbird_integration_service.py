@@ -237,7 +237,7 @@ async def test_work_contract_exposes_public_evidence_for_sunbird(db_session):
         DetectionResult(
             work_id=work.id,
             snapshot_id=snapshot.id,
-            detector_version="v2",
+            detector_version="v1-final-7d",
             metric_name="composite",
             baseline_size=20,
             baseline_missing_count=0,
@@ -257,6 +257,60 @@ async def test_work_contract_exposes_public_evidence_for_sunbird(db_session):
     assert rows[0]["final_public_metrics"] == {"like_count": 200}
     assert rows[0]["priority"] is True
     assert rows[0]["relative_multiple"] == 5.5
+
+
+@pytest.mark.asyncio
+async def test_work_contract_uses_detection_thresholds_for_custom_rules(db_session):
+    account = ContentAccount(
+        platform="douyin",
+        external_account_id="sec-custom-thresholds",
+        raw_profile={
+            "monitoring_rules": {
+                "hot_multiple": 6.0,
+                "very_hot_multiple": 8.0,
+            }
+        },
+    )
+    db_session.add(account)
+    await db_session.flush()
+    work = ContentWork(
+        account_id=account.id,
+        external_work_id="work-custom-thresholds",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        raw_identity={},
+    )
+    db_session.add(work)
+    await db_session.flush()
+    snapshot = EngagementSnapshot(work_id=work.id, metrics={"like_count": 450}, raw_data={})
+    db_session.add(snapshot)
+    await db_session.flush()
+    db_session.add(
+        DetectionResult(
+            work_id=work.id,
+            snapshot_id=snapshot.id,
+            detector_version="v1-final-7d",
+            metric_name="like_count",
+            baseline_size=20,
+            baseline_missing_count=0,
+            current_value=450,
+            baseline_value=100,
+            relative_multiple=4.5,
+            hot_multiple=6.0,
+            very_hot_multiple=8.0,
+            enters_analysis=False,
+            priority_analysis=False,
+            status="observing",
+            evidence={},
+        )
+    )
+    await db_session.flush()
+
+    rows, total = await service.list_work_contracts(db_session)
+
+    assert total == 1
+    assert rows[0]["status"] == "observing"
+    assert rows[0]["priority"] is False
 
 
 def test_collection_error_codes_are_stable():

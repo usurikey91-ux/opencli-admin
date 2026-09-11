@@ -563,12 +563,27 @@ def work_contract(work: ContentWork) -> dict[str, Any]:
             key=lambda item: item.evaluated_at,
             default=None,
         )
+    final_snapshot = None
+    if final_detection:
+        final_snapshot = next(
+            (
+                item
+                for item in snapshots
+                if getattr(item, "id", None) == final_detection.snapshot_id
+            ),
+            None,
+        )
     relative_multiple = detection.relative_multiple if detection else None
     if relative_multiple is not None:
-        if relative_multiple >= 5.0:
+        # Detection rows carry the thresholds that produced the decision. Use
+        # those values when shaping the API contract instead of reclassifying
+        # every account with the global 3x/5x defaults.
+        hot_multiple = detection.hot_multiple if detection else 3.0
+        very_hot_multiple = detection.very_hot_multiple if detection else 5.0
+        if relative_multiple >= very_hot_multiple:
             current_status = "very_hot"
             current_priority = True
-        elif relative_multiple >= 3.0:
+        elif relative_multiple >= hot_multiple:
             current_status = "hot"
             current_priority = False
         elif detection and detection.status in {"hot", "very_hot"}:
@@ -595,7 +610,7 @@ def work_contract(work: ContentWork) -> dict[str, Any]:
         "content": work.content,
         "published_at": work.published_at,
         "latest_public_metrics": latest.metrics if latest else {},
-        "final_public_metrics": latest.metrics if latest and detection else {},
+        "final_public_metrics": final_snapshot.metrics if final_snapshot else {},
         "relative_multiple": relative_multiple,
         "status": current_status,
         "priority": current_priority,
